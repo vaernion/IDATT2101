@@ -4,25 +4,25 @@
 #include <string.h>
 #include <math.h>
 
-long crazy_power(long x, int n);
+double crazy_power(double x, int n);
 void runTest();
 void runBench();
 
 int main(int argc, char *argv[])
 {
-    if (!strcmp(argv[1], "test"))
+    if (argc > 1 && strcmp(argv[1], "test") == 0)
     {
         runTest();
         return 0;
     }
-    else if (!strcmp(argv[1], "bench"))
+    else if (argc > 1 && strcmp(argv[1], "bench") == 0)
     {
         runBench();
         return 0;
     }
     else if (argc < 3)
     {
-        printf("usage: crzy_pwr <num> <factor> | test | bench\n");
+        printf("usage: %s <num> <factor> | test | bench\n", argv[0]);
         return 1;
     }
 
@@ -36,7 +36,7 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-long crazy_power(long x, int n)
+double crazy_power(double x, int n)
 {
     if (n == 0)
         return 1;
@@ -58,34 +58,29 @@ void runTest()
 
 void runBench()
 {
-    int args[3][4] = {{20, 1000}, {20, 10000}, {20, 100000}};
+    double args[4][2] = {{1.001, 100}, {1.001, 1000}, {1.001, 10000}, {1.001, 100000}};
+    int rounds = 1000;
 
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 4; i++)
     {
         double stdStartTime = (double)clock() / CLOCKS_PER_SEC;
-        double stdEndTime;
-        int stdCount = 0;
-        do
+        for (int j = 0; j < rounds; j++)
         {
             pow(args[i][0], args[i][1]);
-            stdEndTime = (double)clock() / CLOCKS_PER_SEC;
-            stdCount++;
-        } while (stdEndTime - stdStartTime < 1);
-        double stdTimeElapsed = (stdEndTime - stdStartTime) / stdCount;
+        }
+        double stdEndTime = (double)clock() / CLOCKS_PER_SEC;
+        double stdTimeElapsed = (stdEndTime - stdStartTime) / (double)rounds;
 
         double customStartTime = (double)clock() / CLOCKS_PER_SEC;
-        double customEndTime = (double)clock() / CLOCKS_PER_SEC;
-        int customCount;
-        do
+        for (int j = 0; j < rounds; j++)
         {
-            crazy_power(args[i][0], args[i][1]);
-            customEndTime = (double)clock() / CLOCKS_PER_SEC;
-            customCount++;
-        } while (customEndTime - customStartTime < 1);
-        double customTimeElapsed = (customEndTime - customStartTime) / customCount;
+            crazy_power(args[i][0], (int)args[i][1]);
+        }
+        double customEndTime = (double)clock() / CLOCKS_PER_SEC;
+        double customTimeElapsed = (customEndTime - customStartTime) / (double)rounds;
 
-        printf("x = %i, n = %i\n", args[i][0], args[i][1]);
-        printf("std:    %f microseconds per operation ran %i times\n", stdTimeElapsed * 1000000, stdCount);
-        printf("custom: %f microseconds per operation ran %i times\n\n", customTimeElapsed * 1000000, customCount);
+        printf("x = %f, n = %f\n", args[i][0], args[i][1]);
+        printf("std:    %f microseconds per operation\n", stdTimeElapsed * 1000000);
+        printf("custom: %f microseconds per operation\n", customTimeElapsed * 1000000);
     }
 }

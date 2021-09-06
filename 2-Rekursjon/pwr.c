@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
     }
     else if (argc < 3)
     {
-        printf("usage: pwr <num> <factor> | test | bench\n");
+        printf("usage: %s <num> <factor> | test | bench\n", argv[0]);
         return 1;
     }
 
@@ -55,34 +55,35 @@ void runTest()
 
 void runBench()
 {
-    int args[3][2] = {{20000, 1000}, {20000, 10000}, {20000, 100000}};
+    // 100k recursive calls seem fine, likely thanks to the small size of each frame of power
+    // may cause segmentation fault on systems with smaller max stack size
+    // 1.001^100000 == 2.5e43, well within double's e308 limit
+    double args[3][2] = {{1.001, 1000}, {1.001, 10000}, {1.001, 100000}};
+    int rounds = 1000;
 
+    // instead of running for 1 second and calling clock() each iteration
+    // we run 1000 rounds and divide to get the average time per round
+    // because clock() seemed to be slower than the algorithm, and dominating the time taken
     for (int i = 0; i < 3; i++)
     {
         double stdStartTime = (double)clock() / CLOCKS_PER_SEC;
-        double stdEndTime;
-        int stdCount = 0;
-        do
+        for (int j = 0; j < rounds; j++)
         {
             pow(args[i][0], args[i][1]);
-            stdEndTime = (double)clock() / CLOCKS_PER_SEC;
-            stdCount++;
-        } while (stdEndTime - stdStartTime < 1);
-        double stdTimeElapsed = (stdEndTime - stdStartTime) / stdCount;
+        }
+        double stdEndTime = (double)clock() / CLOCKS_PER_SEC;
+        double stdTimeElapsed = (stdEndTime - stdStartTime) / (double)rounds;
 
         double customStartTime = (double)clock() / CLOCKS_PER_SEC;
-        double customEndTime = (double)clock() / CLOCKS_PER_SEC;
-        int customCount;
-        do
+        for (int j = 0; j < rounds; j++)
         {
-            power(args[i][0], args[i][1]);
-            customEndTime = (double)clock() / CLOCKS_PER_SEC;
-            customCount++;
-        } while (customEndTime - customStartTime < 1);
-        double customTimeElapsed = (customEndTime - customStartTime) / customCount;
+            power(args[i][0], (int)args[i][1]);
+        }
+        double customEndTime = (double)clock() / CLOCKS_PER_SEC;
+        double customTimeElapsed = (customEndTime - customStartTime) / (double)rounds;
 
-        printf("x = %i, n = %i\n", args[i][0], args[i][1]);
-        printf("std:    %f microseconds per operation ran %i times\n", stdTimeElapsed * 1000000, stdCount);
-        printf("custom: %f microseconds per operation ran %i times\n\n", customTimeElapsed * 1000000, customCount);
+        printf("x = %f, n = %f\n", args[i][0], args[i][1]);
+        printf("std:    %f microseconds per operation\n", stdTimeElapsed * 1000000);
+        printf("custom: %f microseconds per operation\n", customTimeElapsed * 1000000);
     }
 }
