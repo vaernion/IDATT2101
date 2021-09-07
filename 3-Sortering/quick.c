@@ -8,75 +8,76 @@ void quicksort(int t[], int v, int h);
 int median3sort(int t[], int v, int h);
 int splitt(int t[], int v, int h);
 void bytt(int t[], int a, int b);
-void copyArr(int source[], int copy[], long length);
-void fillWithRandom(int t[], long length, long max);
-bool sortCheck(int t[], long length);
-long long tableChecksum(int t[], long length);
-float testSort(int t[], long length, bool useHelper, void (*helper)(), int splitValue);
+void copyArr(int source[], int copy[], long n);
+void fillWithRandom(int t[], long n, long max);
+bool sortCheck(int t[], long n);
+long long tableChecksum(int t[], long n);
+float testSort(int t[], long n, bool useHelper, void (*helper)(), int splitValue);
 void quicksortWithHelp(int t[], int v, int h, void (*helper)(), int splitValue);
 void bubbleSortHelper(int t[], int v, int h);
 void insertionSortHelper(int t[], int v, int h);
-int fitSplitValue(int t[], long length, void (*helper)());
+int fitSplitValue(int t[], long n, void (*helper)());
 
 const float TEST_ROUNDS = 3; // find average time to sort by doing several rounds on new data
-const long MILLION = 1000000;
+const long DATA_SIZE = 1000000;
+const int BUBBLE_SPLIT = 30;
+const int INSERTION_SPLIT = 23;
 
+// find average time to quicksort a large array of random numbers with or without helper algorithms
+// run with "fit b/n" arguments to find optimal split value for bubble/insert sort
 int main(int argc, char *argv[])
 {
     srand(time(0)); // seed rng
 
-    const long dataLength = MILLION;
-    int randomData[dataLength]; // never mutated after rng filling, used as source for copies
-    fillWithRandom(randomData, dataLength, RAND_MAX);
+    const long n = DATA_SIZE;
+    int randomData[n]; // never mutated after rng filling, used as source for copies
+    fillWithRandom(randomData, n, RAND_MAX);
 
     if (argc > 2 && strcmp(argv[1], "fit") == 0)
     {
         if (strcmp(argv[2], "b") == 0)
         {
-
-            printf("### fitting bubble sort helper with %li length random data ###\n", dataLength);
-            fitSplitValue(randomData, dataLength, &bubbleSortHelper);
+            printf("### fitting bubble sort helper with random data (n: %li) ###\n", n);
+            fitSplitValue(randomData, n, &bubbleSortHelper);
             return 0;
         }
         else if (strcmp(argv[2], "i") == 0)
         {
-            printf("### fitting insertion sort helper with %li length random data ###\n", dataLength);
-            fitSplitValue(randomData, dataLength, &insertionSortHelper);
+            printf("### fitting insertion sort helper with random data (n: %li) ###\n", n);
+            fitSplitValue(randomData, n, &insertionSortHelper);
             return 0;
         }
     }
 
     printf("### original quicksort ###\n");
-    float original = testSort(randomData, dataLength, false, NULL, 2);
+    float original = testSort(randomData, n, false, NULL, 2);
 
     printf("\n### quicksort with bubble sort ###\n");
-    float bubbleTime = testSort(randomData, dataLength, true, &bubbleSortHelper, 30);
-    if (original && bubbleTime)
-        printf("time factor helped/original: %f\n", bubbleTime / original);
+    float bubbleTime = testSort(randomData, n, true, &bubbleSortHelper, BUBBLE_SPLIT);
+    printf("time factor helped/original: %f\n", bubbleTime / original);
 
     printf("\n### quicksort with insertion sort ###\n");
-    float insertTime = testSort(randomData, dataLength, true, &insertionSortHelper, 23);
-    if (original && bubbleTime)
-        printf("time factor helped/original: %f\n", insertTime / original);
+    float insertTime = testSort(randomData, n, true, &insertionSortHelper, INSERTION_SPLIT);
+    printf("time factor helped/original: %f\n", insertTime / original);
 }
 
-float testSort(int t[], long length, bool useHelper, void (*helper)(), int splitValue)
+float testSort(int t[], long n, bool useHelper, void (*helper)(), int splitValue)
 {
-    const long long checksum = tableChecksum(t, length);
+    const long long checksum = tableChecksum(t, n);
     long long checksumCopy;
     bool isSorted;
 
     float startTime = (float)clock() / CLOCKS_PER_SEC;
     for (int i = 0; i < TEST_ROUNDS; i++)
     {
-        int tCopy[length];
-        copyArr(t, tCopy, length);
+        int tCopy[n];
+        copyArr(t, tCopy, n);
 
-        useHelper ? quicksortWithHelp(tCopy, 0, length - 1, helper, splitValue)
-                  : quicksort(tCopy, 0, length - 1);
+        useHelper ? quicksortWithHelp(tCopy, 0, n - 1, helper, splitValue)
+                  : quicksort(tCopy, 0, n - 1);
 
-        checksumCopy = tableChecksum(tCopy, length);
-        isSorted = sortCheck(tCopy, length);
+        checksumCopy = tableChecksum(tCopy, n);
+        isSorted = sortCheck(tCopy, n);
 
         if (checksum != checksumCopy)
         {
@@ -96,22 +97,22 @@ float testSort(int t[], long length, bool useHelper, void (*helper)(), int split
     float startTimeCopy = (float)clock() / CLOCKS_PER_SEC;
     for (int i = 0; i < TEST_ROUNDS; i++)
     {
-        int tCopy[length];
-        copyArr(t, tCopy, length);
+        int tCopy[n];
+        copyArr(t, tCopy, n);
         // include checksum for more accurate final time
         // sortCheck() is more inconvient to include
-        tableChecksum(tCopy, length);
+        tableChecksum(tCopy, n);
     }
     float endTimeCopy = (float)clock() / CLOCKS_PER_SEC;
     float timeElapsedCopy = (endTimeCopy - startTimeCopy) / TEST_ROUNDS;
 
     float actualElapsedTime = timeElapsed - timeElapsedCopy;
-    printf("average: %f sec (all: %f copying: %f) -- length: %li, split: %i, useHelper: %i -- original: %lli copy: %lli, isSorted: %i): \n",
-           actualElapsedTime, timeElapsed, timeElapsedCopy, length, splitValue, useHelper, checksum, checksumCopy, isSorted);
+    printf("average: %f sec (all: %f copying: %f) -- n: %li, split: %i, useHelper: %i -- original: %lli copy: %lli, isSorted: %i): \n",
+           actualElapsedTime, timeElapsed, timeElapsedCopy, n, splitValue, useHelper, checksum, checksumCopy, isSorted);
     return actualElapsedTime;
 }
 
-int fitSplitValue(int t[], long length, void (*helper)())
+int fitSplitValue(int t[], long n, void (*helper)())
 {
     const int MAX_SIZE = 300;
     float bestTime = 9999;
@@ -120,7 +121,7 @@ int fitSplitValue(int t[], long length, void (*helper)())
     int size = 2;
     while (size < MAX_SIZE)
     {
-        float time = testSort(t, length, true, helper, size);
+        float time = testSort(t, n, true, helper, size);
         if (time < bestTime)
         {
             bestTime = time;
@@ -145,13 +146,13 @@ int fitSplitValue(int t[], long length, void (*helper)())
         }
     }
 
-    printf("optimal size: %i time: %f with %li elements\n", bestSize, bestTime, length);
+    printf("optimal size: %i time: %f with n:%li\n", bestSize, bestTime, n);
     return bestSize;
 }
 
-bool sortCheck(int t[], long length)
+bool sortCheck(int t[], long n)
 {
-    for (int i = length - 1; i > 0; i--)
+    for (int i = n - 1; i > 0; i--)
     {
         if (t[i] < t[i - 1])
         {
@@ -161,27 +162,27 @@ bool sortCheck(int t[], long length)
     return true;
 }
 
-long long tableChecksum(int t[], long length)
+long long tableChecksum(int t[], long n)
 {
     long long sum = 0;
-    for (int i = 0; i < length; i++)
+    for (int i = 0; i < n; i++)
     {
         sum += t[i];
     }
     return sum;
 }
 
-void fillWithRandom(int t[], long length, long max)
+void fillWithRandom(int t[], long n, long max)
 {
-    for (int i = 0; i < length; i++)
+    for (int i = 0; i < n; i++)
     {
         t[i] = rand() % (max + 1);
     }
 }
 
-void copyArr(int source[], int copy[], long length)
+void copyArr(int source[], int copy[], long n)
 {
-    for (int i = 0; i < length; i++)
+    for (int i = 0; i < n; i++)
     {
         copy[i] = source[i];
     }
