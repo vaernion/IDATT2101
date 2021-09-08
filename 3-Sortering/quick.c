@@ -76,6 +76,14 @@ float testSort(int t[], long n, bool useHelper, void (*helper)(), int splitValue
         useHelper ? quicksortWithHelp(tCopy, 0, n - 1, helper, splitValue)
                   : quicksort(tCopy, 0, n - 1);
 
+        // sort again in one of the test rounds to ensure algorithm works with sorted arrays
+        if (i == 0)
+        {
+            useHelper
+                ? quicksortWithHelp(tCopy, 0, n - 1, helper, splitValue)
+                : quicksort(tCopy, 0, n - 1);
+        }
+
         checksumCopy = tableChecksum(tCopy, n);
         isSorted = sortCheck(tCopy, n);
 
