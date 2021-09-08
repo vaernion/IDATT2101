@@ -18,10 +18,10 @@ void bubbleSortHelper(int t[], int v, int h);
 void insertionSortHelper(int t[], int v, int h);
 int fitSplitValue(int t[], long n, void (*helper)());
 
-const float TEST_ROUNDS = 5; // find average time to sort by doing several rounds on new data
+const float TEST_ROUNDS = 7; // find average time to sort by doing several rounds on new copies
 const long DATA_SIZE = 1000000;
 const int BUBBLE_SPLIT = 6;
-const int INSERTION_SPLIT = 25;
+const int INSERTION_SPLIT = 29;
 
 // find average time to quicksort a large array of random numbers with or without helper algorithms
 // run with "fit b/n" arguments to find optimal split value for bubble/insert sort
@@ -140,7 +140,7 @@ int fitSplitValue(int t[], long n, void (*helper)())
         {
             size += 1;
         }
-        else if (size < 100)
+        else if (size < 80)
         {
             size += 2;
         }
@@ -286,7 +286,7 @@ void insertionSortHelper(int t[], int v, int h)
     {
         int bytt = t[j];
         int i = j - 1;
-        while (i >= 0 && t[i] > bytt)
+        while (i >= v && t[i] > bytt)
         {
             t[i + 1] = t[i];
             --i;
