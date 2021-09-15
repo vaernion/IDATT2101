@@ -8,101 +8,120 @@ typedef struct NodeStruct
     struct NodeStruct *next;
 } Node;
 
-typedef struct SingleCircularLinkedListStruct
+typedef struct
 {
     Node *head;
     int elements;
-} SingleCircularLinkedList;
+} CircularSingleLinkedList;
 
-// create node (nodeptr, id)
 Node *createNode(Node *next, int data)
 {
     Node *this = malloc(sizeof(Node));
+    this->next = next;
     this->data = data;
-    this->next = next != NULL ? next : this;
     return this;
 }
 
-// add node to list (listptr, nodeptr)
-
-// remove node from list
-void deleteNode(Node *node, SingleCircularLinkedList *list)
+void insertAtStart(CircularSingleLinkedList *list, Node *node)
 {
-    Node *prev;
-    Node *this = list->head;
+    node->next = list->head;
+    list->head = node;
+    list->elements++;
+}
 
-    while (this != node)
+void generateChain(CircularSingleLinkedList *list, int n)
+{
+    Node *node = NULL;
+    Node *last = NULL;
+    for (int i = n; i > 0; i--)
     {
-        prev = this;
-        this = this->next;
+        node = createNode(node, i);
+        insertAtStart(list, node);
+        if (i == n)
+            last = node;
     }
+    last->next = node;
+    list->head = last;
+}
 
+void deleteNextNode(CircularSingleLinkedList *list, Node *prev)
+{
+    Node *this = prev->next;
     prev->next = this->next; // skip to be deleted node
     if (list->head == this)
-    {
         list->head = this->next; // update head if deleted node was head
-    }
     list->elements--;
     free(this);
 }
 
-Node *skipNodes(Node *node, int n)
+int findSafePosition(CircularSingleLinkedList *list, int m)
 {
-    for (int i = 0; i < n; i++)
+    Node *prev = list->head;
+
+    while (list->elements > 1)
     {
-        node = node->next;
+        for (int i = 1; i < m; i++)
+        {
+            prev = prev->next;
+        }
+
+        deleteNextNode(list, prev);
     }
-    return node;
+    return list->head->data;
+}
+
+// solves the josephus problem for any int n above 0
+int josephus(int n, int m)
+{
+    CircularSingleLinkedList *list = malloc(sizeof(CircularSingleLinkedList));
+    generateChain(list, n);
+    int safe = findSafePosition(list, m);
+    printf("n: %i m: %i safe: %i", n, m, safe);
+    return safe;
+}
+
+void runTests()
+{
+    int testData[][3] = {
+        {1, 1, 1},
+        {2, 1, 2},
+        {2, 4, 1},
+        {10, 4, 5},
+        {40, 3, 28},
+        {256, 2, 1},
+        {1000, 24, 265},
+        {4321, 42, 1469},
+        {123456, 987, 94097},
+        {999999, 57, 74063}};
+
+    for (int i = 0; i < sizeof(testData) / sizeof(testData[0]); i++)
+    {
+        int n = testData[i][0];
+        int m = testData[i][1];
+        int safe = josephus(n, m);
+        printf(" valid: %i\n", safe == testData[i][2]);
+    }
 }
 
 int main(int argc, char *argv[])
 {
+    if (argc > 1 && strcmp(argv[1], "-t") == 0)
+    {
+        runTests();
+        return 0;
+    }
     if (argc < 3)
     {
-        printf("usage: %s <n> <interval>\n", argv[0]);
+        printf("usage: %s <n> <interval> | -t\n", argv[0]);
         return 1;
     }
     int n = atoi(argv[1]);
     int m = atoi(argv[2]);
-    if (n == 0 || m == 0)
+    if (n <= 0 || m <= 0)
     {
-        printf("arguments must be integers\n");
+        printf("arguments must be integers above 0\n");
         return 1;
     }
-
-    printf("%i %i\n", n, m);
-
-    SingleCircularLinkedList *list = malloc(sizeof(SingleCircularLinkedList));
-
-    // Node *head = (malloc(sizeof(Node)));
-    Node *head = createNode(NULL, 1);
-    printf("list: %p\n", list);
-    printf("head: %p data: %i next: %p\n", head, head->data, head->next);
-    list->head = head;
-
-    // loop generate nodes
-    for (int i = 0; i < 5; i++)
-    {
-        // Node *next = NULL;
-        // createNode(next, i + 1);
-    }
-
-    Node *temp = list->head;
-    for (int i = 0; i < 5; i++)
-    {
-        printf("%i %p\n", temp->data, temp);
-        temp = temp->next;
-    }
-
-    Node *tobeDeleted = skipNodes(list->head, 3);
-    printf("tobedeleteD: %p\n", tobeDeleted);
-
-    deleteNode(tobeDeleted, list);
-
-    Node *temp2 = list->head;
-    for (int i = 0; i < 5; i++)
-    {
-        printf("%i %p\n", temp2->data, temp2);
-        temp = temp2->next;
-    }
+    josephus(n, m);
+    printf("\n");
 }
