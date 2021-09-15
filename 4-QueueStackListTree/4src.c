@@ -53,15 +53,8 @@ void parseCode(Stack *stack, char c, char cPrev, int line)
     if (cPrev == '\\' && c != '\\')
         return;
 
-    // "//" style comments last until newline
-    if (stack->head != NULL && stack->head->c == '/')
-    {
-        if (c == '\n')
-            popStack(stack);
-        return;
-    }
-    // "#" style comments last until newline
-    if (stack->head != NULL && stack->head->c == '#')
+    // "//" and "#" style comments last until newline
+    if (stack->head != NULL && (stack->head->c == '/' || stack->head->c == '#'))
     {
         if (c == '\n')
             popStack(stack);
