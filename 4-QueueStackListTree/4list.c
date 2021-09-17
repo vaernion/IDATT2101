@@ -70,7 +70,6 @@ int findSafePosition(CircularSingleLinkedList *list, int m)
     return list->head->data;
 }
 
-// solves the josephus problem for any int n above 0
 int josephus(int n, int m)
 {
     CircularSingleLinkedList *list = malloc(sizeof(CircularSingleLinkedList));
