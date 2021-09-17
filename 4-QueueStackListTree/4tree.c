@@ -32,21 +32,15 @@ double calcTree(Node *node)
 
 void printTree(Node *node)
 {
-    if (node->left != NULL)
+    if (node->op == '+' || node->op == '-' || node->op == '*' || node->op == '/')
     {
         printf("(");
         printTree(node->left);
-    }
-    if (node->op != '0')
-    {
         printf("%c", node->op);
-    }
-    if (node->right != NULL)
-    {
         printTree(node->right);
         printf(")");
     }
-    if (node->val)
+    else
     {
         printf("%.0f", node->val);
     }
