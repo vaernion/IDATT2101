@@ -46,7 +46,7 @@ void codeError(char c, int line)
 
 // Adds or removes symbols from the stack to track unclosed brackets.
 // Skips brackets inside strings or comments.
-// Does not handle Windows newlines (CRLF) or /* comment blocks */
+// Does not handle Windows newlines (CRLF)
 void parseCode(Stack *stack, char c, char cPrev, int line)
 {
     // ignore values following escape char, except an escaped escape char
@@ -57,6 +57,14 @@ void parseCode(Stack *stack, char c, char cPrev, int line)
     if (stack->head != NULL && (stack->head->c == '/' || stack->head->c == '#'))
     {
         if (c == '\n')
+            popStack(stack);
+        return;
+    }
+
+    // multi-line comments last until */
+    if (stack->head != NULL && stack->head->c == 'M')
+    {
+        if (c == '/' && cPrev == '*')
             popStack(stack);
         return;
     }
@@ -75,6 +83,15 @@ void parseCode(Stack *stack, char c, char cPrev, int line)
         return;
     }
 
+    /* multi-line comments
+    registered as 'M'
+    test: {(})\''"
+    */
+    if (c == '*' && cPrev == '/')
+    {
+        Node *node = createNode(stack->head, 'M', line);
+        pushStack(stack, node);
+    }
     // C style single line comments
     if (c == '/' && cPrev == '/')
     {
