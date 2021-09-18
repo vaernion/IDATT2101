@@ -179,10 +179,10 @@ int main(int argc, char *argv[])
     {
         for (Node *e = stack->head; e != NULL; e = e->next)
         {
-            codeError(e->c, e->line);
+            printf("Invalid syntax: %c at line %i\n", e->c, e->line);
         }
 
-        printf("Fail: code has invalid brackets\n");
+        printf("Error: reached end, code has remaining unclosed brackets\n");
         return 1;
     }
 
