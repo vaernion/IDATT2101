@@ -93,7 +93,7 @@ void parseCode(Stack *stack, char c, char cPrev, int line)
         pushStack(stack, node);
     }
     // C style single line comments
-    if (c == '/' && cPrev == '/')
+    else if (c == '/' && cPrev == '/')
     {
         Node *node = createNode(stack->head, c, line);
         pushStack(stack, node);
@@ -117,6 +117,7 @@ void parseCode(Stack *stack, char c, char cPrev, int line)
         pushStack(stack, node);
     }
 
+    // ordinary brackets
     else if (c == '{' || c == '[' || c == '(')
     {
         Node *node = createNode(stack->head, c, line);
