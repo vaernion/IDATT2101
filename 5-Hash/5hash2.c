@@ -61,28 +61,28 @@ long probeLinear(long table[], long num)
 void test(long nums[])
 {
     long (*probes[])() = {probeLinear};
-    char probeNames[][50] = {"linear probe", "quadratic probe", "double hashing"};
-    static long table[TABLE_SIZE] = {0}; // hash table
-
+    char probeNames[][30] = {"linear probe", "quadratic probe", "double hashing"};
     double percents[] = {0.5, 0.8, 0.9, 0.99, 1};
+
+    static long table[TABLE_SIZE] = {0}; // hash table, cleared and reused between tests
 
     for (int i = 0; i < 1; i++)
     {
         printf("starting test #%i %s\n", i + 1, probeNames[i]);
         for (int j = 0; j < 5; j++)
         {
-            float startTime = (float)clock() / CLOCKS_PER_SEC;
             long collisions = 0;
             long elementsUsed = TABLE_SIZE * percents[j];
 
+            float startTime = (float)clock() / CLOCKS_PER_SEC;
             for (long k = 0; k < elementsUsed; k++)
             {
                 long c = probes[i](table, nums[k]);
                 collisions += c;
             }
-
             float endTime = (float)clock() / CLOCKS_PER_SEC;
             float timeElapsed = (endTime - startTime);
+
             printf("used: %.2f elements: %ld collisions: %ld coll_avg.: %.2f time: %.2fs\n",
                    percents[j], elementsUsed, collisions, (double)collisions / TABLE_SIZE, timeElapsed);
 
