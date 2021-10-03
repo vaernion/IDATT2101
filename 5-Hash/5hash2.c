@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <time.h>
 
-// #define TABLE_SIZE 10000019
-#define TABLE_SIZE 101
+#define TABLE_SIZE 10000019
+// #define TABLE_SIZE 101
 
 void genRandom(long nums[])
 {
@@ -37,10 +37,10 @@ long probeLinear(long table[], long num)
 {
     long collisions = 0;
     long h = modHash(num);
+    long index = h;
 
     for (long i = 0; i < TABLE_SIZE; i++)
     {
-        long index = modHash(h + i);
         if (table[index] == 0)
         {
             table[index] = num;
@@ -48,6 +48,7 @@ long probeLinear(long table[], long num)
         }
         else
         {
+            index = modHash(h + i + 1);
             collisions++;
         }
     }
@@ -91,11 +92,14 @@ long doubleProbe(long table[], long num)
 {
     long collisions = 0;
     long h1 = modHash(num);
-    long h2 = modHash2(num);
+    long h2;
+    long index = h1;
+
+    if (table[index] != 0)
+        h2 = modHash2(num);
 
     for (long i = 0; i < TABLE_SIZE; i++)
     {
-        long index = modHash(h1 + (h2 * i));
         if (table[index] == 0)
         {
             table[index] = num;
@@ -103,6 +107,7 @@ long doubleProbe(long table[], long num)
         }
         else
         {
+            index = modHash(index + h2);
             collisions++;
         }
     }
