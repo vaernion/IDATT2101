@@ -2,9 +2,8 @@
 #include <stdlib.h>
 #include <time.h>
 
-// const int TABLE_SIZE = 10000019;
-#define TABLE_SIZE 10000019
-// #define TABLE_SIZE 101
+// #define TABLE_SIZE 10000019
+#define TABLE_SIZE 101
 
 void genRandom(long nums[])
 {
@@ -53,20 +52,74 @@ long probeLinear(long table[], long num)
         }
     }
 
-    // Should never run
+    printf("ERROR: COULD NOT INSERT %ld\n", num);
+    return collisions;
+}
+
+long probeQuadratic(long table[], long num)
+{
+    long collisions = 0;
+    long h = modHash(num);
+    const int k1 = 1;
+    const int k2 = 1;
+
+    for (long i = 0; i < TABLE_SIZE; i++)
+    {
+        long index = modHash(h + (k1 * i) + (k2 * (i * i)));
+        if (table[index] == 0)
+        {
+            table[index] = num;
+            return collisions;
+        }
+        else
+        {
+            collisions++;
+        }
+    }
+
+    printf("ERROR: COULD NOT INSERT %ld\n", num);
+    return collisions;
+}
+
+long modHash2(long num)
+{
+    long newMod = TABLE_SIZE - 1;
+    return num % newMod + 1;
+}
+
+long doubleProbe(long table[], long num)
+{
+    long collisions = 0;
+    long h1 = modHash(num);
+    long h2 = modHash2(num);
+
+    for (long i = 0; i < TABLE_SIZE; i++)
+    {
+        long index = modHash(h1 + (h2 * i));
+        if (table[index] == 0)
+        {
+            table[index] = num;
+            return collisions;
+        }
+        else
+        {
+            collisions++;
+        }
+    }
+
     printf("ERROR: COULD NOT INSERT %ld\n", num);
     return collisions;
 }
 
 void test(long nums[])
 {
-    long (*probes[])() = {probeLinear};
+    long (*probes[])(long[], long) = {&probeLinear, &probeQuadratic, &doubleProbe};
     char probeNames[][30] = {"linear probe", "quadratic probe", "double hashing"};
     double percents[] = {0.5, 0.8, 0.9, 0.99, 1};
 
     static long table[TABLE_SIZE] = {0}; // hash table, cleared and reused between tests
 
-    for (int i = 0; i < 1; i++)
+    for (int i = 0; i < 3; i++)
     {
         printf("starting test #%i %s\n", i + 1, probeNames[i]);
         for (int j = 0; j < 5; j++)
@@ -74,16 +127,16 @@ void test(long nums[])
             long collisions = 0;
             long elementsUsed = TABLE_SIZE * percents[j];
 
-            float startTime = (float)clock() / CLOCKS_PER_SEC;
+            double startTime = (double)clock() / CLOCKS_PER_SEC;
             for (long k = 0; k < elementsUsed; k++)
             {
-                long c = probes[i](table, nums[k]);
+                long c = (*probes[i])(table, nums[k]);
                 collisions += c;
             }
-            float endTime = (float)clock() / CLOCKS_PER_SEC;
-            float timeElapsed = (endTime - startTime);
+            double endTime = (double)clock() / CLOCKS_PER_SEC;
+            double timeElapsed = endTime - startTime;
 
-            printf("used: %.2f elements: %ld collisions: %ld coll_avg.: %.2f time: %.2fs\n",
+            printf("used: %.2f elements: %ld collisions: %ld coll_avg.: %.2f time: %.2lfs\n",
                    percents[j], elementsUsed, collisions, (double)collisions / TABLE_SIZE, timeElapsed);
 
             // reset hash table
@@ -92,7 +145,6 @@ void test(long nums[])
                 table[r] = 0;
             }
         }
-        printf("finished test #%i\n", i + 1);
     }
 }
 
