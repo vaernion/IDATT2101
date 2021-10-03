@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define TABLE_SIZE 10000019
-// #define TABLE_SIZE 101
+// #define TABLE_SIZE 10000019
+#define TABLE_SIZE 101
 
 void genRandom(long nums[])
 {
@@ -140,6 +140,16 @@ void test(long nums[])
             }
             double endTime = (double)clock() / CLOCKS_PER_SEC;
             double timeElapsed = endTime - startTime;
+
+            // verify
+            long actuallyUsed = 0;
+            for (int v = 0; v < TABLE_SIZE; v++)
+            {
+                if (table[v] != 0)
+                    actuallyUsed++;
+            }
+            if (actuallyUsed != elementsUsed)
+                printf("ERROR: %ld NUMBERS MISSING IN HASH TABLE\n", elementsUsed - actuallyUsed);
 
             printf("used: %.2f elements: %ld collisions: %ld coll_avg.: %.2f time: %.2lfs\n",
                    percents[j], elementsUsed, collisions, (double)collisions / TABLE_SIZE, timeElapsed);
