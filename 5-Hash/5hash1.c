@@ -7,7 +7,6 @@
 
 int nodes = 0;
 int collisions = 0;
-int tableSpaceUsed = 0;
 
 typedef struct NodeStruct
 {
@@ -51,10 +50,7 @@ void insert(Node *table[], char data[])
         collisions++;
         node->next = table[index];
     }
-    else
-    {
-        tableSpaceUsed++;
-    }
+
     table[index] = node;
 }
 
@@ -118,7 +114,7 @@ int main(int argc, char *argv[])
         readLinesToHash(table, filename);
 
     printf("Collisions per person: %f\n", collisions / (float)nodes);
-    printf("Collisions: %d -- Load factor: %f\n", collisions, tableSpaceUsed / (float)TABLE_SIZE);
+    printf("Collisions: %d -- Load factor: %f\n", collisions, nodes / (float)TABLE_SIZE);
 
     lookupAndPrint(table, "Grunde Andreas Grepstad Thorheim");
     lookupAndPrint(table, "Kristoffer Øyen");
