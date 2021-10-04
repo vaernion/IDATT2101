@@ -2,8 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-// #define TABLE_SIZE 10000019
-#define TABLE_SIZE 101
+#define TABLE_SIZE 10000019
 
 void genRandom(long nums[])
 {
