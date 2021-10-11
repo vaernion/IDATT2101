@@ -2,77 +2,166 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define infinity 1000000000
+
 // 18058 Moholt
 // 37774 Kalvskinnet
 
+typedef struct EdgeStruct
+{
+    long to;
+    struct EdgeStruct next;
+} Edge;
+
 typedef struct NodeStruct
 {
-    int to;
-    struct NodeStruct *next;
+    long distance;
+    long previous;
 } Node;
 
-void insert(Node **nodes, int from, int to)
+typedef struct QueueItemStruct
 {
-    printf("Node - from:%d - to:%d\n", from, to);
-    Node *node = malloc(sizeof(Node));
-    node->to = to;
+    long data;
+    struct QueueItemStruct *next;
+} QueueItem;
 
-    printf("insert: %p %d\n", &node[from], node[from].to);
+typedef struct QueueStruct
+{
+    QueueItem *head;
+    QueueItem *tail;
+} Queue;
 
-    if (nodes[from] != NULL)
+void queueInsert(Queue *queue, long data)
+{
+    QueueItem *item = calloc(1, sizeof(QueueItem));
+    item->data = data;
+    if (queue->tail != NULL)
     {
-        node->next = nodes[from];
+        queue->tail->next = item;
     }
-
-    nodes[from] = node;
+    queue->tail = item;
+    if (queue->head == NULL)
+    {
+        queue->head = item;
+    }
 }
 
-void readGraphFile(char file[], Node **nodes)
+long queueGet(Queue *queue)
 {
+    QueueItem *item = queue->head;
+    long data = item->data;
+    queue->head = item->next;
+    free(item);
+    if (queue->head == NULL)
+        queue->tail = NULL;
+    return data;
+}
+
+void edgeListInsert(Edge *edges[], int from, int to)
+{
+    Edge *edge = calloc(1, sizeof(Edge));
+    edge->to = to;
+
+    if (edges[from] != NULL)
+    {
+        edge->next = edges[from];
+    }
+
+    edges[from] = edge;
+}
+
+void readGraphFile(FILE *fp, Edge *edges[])
+{
+    const int buffSize = 1024;
+    char buffer[buffSize];
+
+    while (fgets(buffer, buffSize, fp))
+    {
+        long from = atoi(strtok(buffer, " "));
+        long to = atoi(strtok(NULL, " "));
+        edgeListInsert(edges, from, to);
+    }
+
+    fclose(fp);
+}
+
+void displayBFS(Node *nodes[], int n)
+{
+    printf("%5s  %5s  %5s\n", "Node", "Forgj", "Dist");
+    for (long i = 0; i < n; i++)
+    {
+        if (nodes[i]->previous == infinity)
+        {
+            printf("%5ld %5s %5s\n", i, "none", "∞");
+        }
+        else
+        {
+            printf("%5ld %5ld %5ld\n", i, nodes[i]->previous, nodes[i]->distance);
+        }
+    }
+}
+
+void bfs(char file[], int start)
+{
+    // read first line in file here to avoid pointer issues
+    // and to know the length nodes should be
     FILE *fp = fopen(file, "r");
     if (fp == NULL)
     {
         perror("Error while opening file");
         exit(1);
     }
-
     const int buffSize = 1024;
     char buffer[buffSize];
-
-    // read number of nodes from first line in graph file
     fgets(buffer, buffSize, fp);
-    int n = atoi(strtok(buffer, " "));
-    printf("n: %d\n", n);
+    long n = atoi(strtok(buffer, " "));
+    printf("N: %ld", n);
 
-    *nodes = calloc(n, sizeof(Node));
-
-    if (nodes == NULL)
+    Node **nodes = calloc(n, sizeof(Node));
+    Edge edges[] = calloc(n, sizeof(Edge));
+    for (long i = 0; i < n; i++)
     {
-        printf("Failed to allocate memory\n");
-        exit(1);
+        // Node *node = malloc(sizeof(Node));
+        nodes[i].distance = infinity;
+        nodes[i].previous = infinity;
+        // nodes[i] = node;
+        //edges[i] = NULL;
+        // free(node);
     }
 
-    while (fgets(buffer, buffSize, fp))
+    printf("while loop start\n");
+
+    readGraphFile(fp, edges);
+
+    Queue *queue = calloc(1, sizeof(Queue));
+    queueInsert(queue, start);
+
+    printf("while loop start\n");
+
+    while (queue->head != NULL)
     {
-        int from = atoi(strtok(buffer, " "));
-        int to = atoi(strtok(NULL, " "));
-        printf("pre-insert: asdf from:%d to:%d   ", from, to);
-        insert(nodes, from, to);
+        long nodeIndex = queueGet(queue);
+        Node prevNode = nodes[nodeIndex];
+        if (prevNode.previous == infinity)
+        {
+            prevNode.previous = 0;
+            prevNode.distance = 0;
+        }
+
+        for (Edge *edge = edges[nodeIndex]; edge; edge = edge->next)
+        {
+            Node *node = nodes[edge->to];
+            if (node->distance == infinity)
+            {
+                node->distance = prevNode.distance + 1;
+                node->previous = nodeIndex;
+                queueInsert(queue, edge->to);
+            }
+        }
     }
+    free(queue);
 
-    fclose(fp);
-}
-
-void bfs(char file[], int start)
-{
-    Node *nodes;
-    readGraphFile(file, &nodes);
-    // printf("%ld \n", nodes[0]->to);
-
-    // Node *s = nodes[1];
-    // printf("%d", s);
-
-    // free(nodes);
+    displayBFS(nodes, n);
 }
 
 int main(int argc, char *argv[])
@@ -87,7 +176,6 @@ int main(int argc, char *argv[])
                 return 1;
             }
 
-            printf("bfs\n");
             bfs(argv[2], atoi(argv[3]));
         }
         else if (strcmp(argv[1], "top") == 0)

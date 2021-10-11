@@ -13,6 +13,8 @@
         "functional": "c",
         "memory": "c",
         "optional": "c",
-        "system_error": "c"
+        "system_error": "c",
+        "deque": "c",
+        "ostream": "c"
     }
 }
