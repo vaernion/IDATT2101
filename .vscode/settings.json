@@ -15,6 +15,7 @@
         "optional": "c",
         "system_error": "c",
         "deque": "c",
-        "ostream": "c"
+        "ostream": "c",
+        "iosfwd": "c"
     }
 }
