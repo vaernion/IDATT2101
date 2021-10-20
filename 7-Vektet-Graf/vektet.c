@@ -270,7 +270,7 @@ void edmond(char file[])
             graph->destination = i;
     }
 
-    printf("Max flow from %i to %i with Edmond-Karp\n", graph->source, graph->destination);
+    printf("Max flow from %i to %i with Edmonds-Karp\n", graph->source, graph->destination);
     printf("%-9s Path\n", "Increase");
 
     int prevInc = infinity;
