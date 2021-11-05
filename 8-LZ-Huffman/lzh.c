@@ -83,6 +83,11 @@ short shortFromBytes(char input[], int i)
     return *((short *)&input[i]);
 }
 
+void insertShortToBytes(char bytes[], int i, short x)
+{
+    *((short *)&bytes[i]) = x;
+}
+
 int *huffFreqs(char input[], int n)
 {
     int *freq = calloc(FREQS, sizeof(int));
@@ -384,14 +389,18 @@ void readHuff(char input[], int n, char lzData[], int freq[], HuffNode *root)
 
         if (lzRef < 0)
         {
-            printf("skipping LZ ref %i length %i\n", lzRef, 3);
-            // memcpy(lzData[lzDataIndex], input[i], 3);
+            int lzLength = input[i + 2];
+            printf("skipping LZ ref %i length %i\n", lzRef, lzLength);
+            insertShortToBytes(lzData, lzDataIndex, lzRef);
+            lzData[lzDataIndex + 2] = lzLength;
             i += 3; // 2 byte for LZ reference + 1 for LZ length
             lzDataIndex += 3;
         }
         else if (lzRef > 0)
         {
             i += 2; // lzref size
+            insertShortToBytes(lzData, lzDataIndex, lzRef);
+            lzDataIndex += 2;
             int toDecode = lzRef;
             int blockBitsRead = 0;
 
@@ -404,7 +413,7 @@ void readHuff(char input[], int n, char lzData[], int freq[], HuffNode *root)
                 traverseHuffCode(root, input, i, &value,
                                  &blockBitsRead);
 
-                lzData[++lzDataIndex] = value;
+                lzData[lzDataIndex++] = value;
                 printf("VALUE: %hhi %c\n", value, value);
             }
 
@@ -440,7 +449,7 @@ void compress(char infile[], char outfile[])
     fclose(fpIn);
 
     int n = 14;
-    char input[14] = {0, 0, 'a', 's', 'd', 'X', 0, 0, 4, 0, 0, 'a', 'a', 'd'};
+    char input[14] = {0, 0, 'a', 's', 'd', 'f', 0, 0, 4, 0, 0, 'a', 'a', 'd'};
 
     *((short *)&input[0]) = 4;
     *((short *)&input[6]) = -4;
@@ -501,14 +510,9 @@ void decompress(char infile[], char outfile[])
     HuffNode *root = genHuffTree(freq);
 
     int bodyStart = ftell(fp);
-    // printf("bodyStart ftell %i\n", bodyStart);
-
     fseek(fp, 0, SEEK_END);
     int bodyLength = ftell(fp) - bodyStart;
-    // printf("bodyLength %i\n", bodyLength);
-
     fseek(fp, bodyStart, SEEK_SET);
-    // printf("AFTER END AND BACK: %li\n", ftell(fp));
 
     char *huffData = calloc(bodyLength, sizeof(char));
     char *lzData = calloc(lzDataLength, sizeof(char));
@@ -525,10 +529,27 @@ void decompress(char infile[], char outfile[])
     // iterate huffdata, write to lzData
     readHuff(huffData, bodyLength, lzData, freq, root);
 
-    printf("\n--- LZDATA ---\n");
+    printf("\n--- LZDATA raw ---\n");
     for (int i = 0; i < lzDataLength; i++)
     {
-        printf("%c", lzData[i]);
+        printf("%hhi ", lzData[i]);
+    }
+    printf("\n\n");
+
+    printf("\n--- LZDATA char ---\n");
+    for (int i = 0; i < lzDataLength; i++)
+    {
+        printf("%c ", lzData[i]);
+    }
+    printf("\n\n");
+
+    printf("\n--- LZDATA nullcheck ---\n");
+    for (int i = 0; i < lzDataLength; i++)
+    {
+        if (lzData[i] == NULL)
+        {
+            printf("NULL i: %i\n", i);
+        }
     }
     printf("\n\n");
 
