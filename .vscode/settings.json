@@ -1,5 +1,6 @@
 {
     "files.associations": {
+        "*.jsx": "javascriptreact",
         "array": "c",
         "string": "c",
         "string_view": "c",
@@ -16,6 +17,9 @@
         "deque": "c",
         "ostream": "c",
         "iosfwd": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "tuple": "c",
+        "type_traits": "c",
+        "utility": "c"
     }
 }
