@@ -49,7 +49,6 @@ void queueInsertAt(Queue *queue, HuffNode *node, QueueItem *position)
     {
         item->next = queue->head;
         queue->head = item;
-        // printf("POSITION WAS NULL\n");
     }
 
     for (QueueItem *cur = queue->head; cur != NULL; cur = cur->next)
@@ -116,6 +115,7 @@ int *huffFreqs(char input[], int n)
         else
         {
             printf("ERROR: huufFreqs - null lzref\n");
+            exit(1);
         }
     }
 
@@ -146,7 +146,6 @@ HuffNode *genHuffTree(int freq[])
         if (freq[i] > 0)
             numLeaves += 1;
     }
-    // printf("numNodes: %i\n", numLeaves);
 
     // generate leaves
     HuffNode *leaves = calloc(numLeaves, sizeof(HuffNode));
@@ -171,11 +170,6 @@ HuffNode *genHuffTree(int freq[])
         queueInsert(queue, &leaves[i]);
     }
 
-    // for (int i = 0; i < numLeaves; i++)
-    // {
-    //     printf("value: %hhi char: %c freq: %i\n", leaves[i].value, leaves[i].value, leaves[i].freq);
-    // }
-
     // iterate queue, add new nodes to queue at appropiate position
     while (true)
     {
@@ -194,9 +188,6 @@ HuffNode *genHuffTree(int freq[])
         newNode->right = second;
         newNode->freq = first->freq + second->freq;
 
-        // printf("newnode freq: %i -- left freq:%i val:%c -- right: freq:%i val:%c\n",
-        //        newNode->freq, left->freq, left->value, right->freq, right->value);
-
         QueueItem *position = NULL; // will insert at head if it remains NULL
         for (QueueItem *cur = queue->head; cur != NULL; cur = cur->next)
         {
@@ -204,7 +195,6 @@ HuffNode *genHuffTree(int freq[])
             if (newNode->freq <= cur->node->freq || cur->next == NULL)
             {
                 position = cur;
-                // printf("position: freq-%i val-%c\n", position->node->freq, position->node->value);
                 break;
             }
         }
@@ -214,34 +204,14 @@ HuffNode *genHuffTree(int freq[])
 
 void printByte(char byte)
 {
-
     printf("\nBITS for value: %hhu char: %c ---- ", byte, byte);
     for (int i = 7; i >= 0; i--)
     {
-        // int bit = (byte & 1 << i) > 0;
         char bit = (byte >> i) & 1;
         printf("%i", bit);
     }
-    // printf(" --- flipped %hhu to %hhu", byte, ~byte);
     printf("\n");
 }
-
-// void genHuffRoutes(int huffRoutes[], int depths[], HuffNode *node, int route, int depth)
-// {
-//     if (!node->left)
-//     {
-//         printf("value %i %c route %i depth %i\n",
-//                node->value, node->value, route, depth);
-//         huffRoutes[node->value] = route;
-//         depths[node->value] = depth;
-//         return;
-//     }
-//     printf("left: %i\n", route << 1);
-//     genHuffRoutes(huffRoutes, depths, node->left, route << 1, depth + 1);
-
-//     printf("right: %i\n", route << 1 | 1);
-//     genHuffRoutes(huffRoutes, depths, node->right, route << 1 | 1, depth + 1);
-// }
 
 void genHuffRoutes(char huffRoutes[FREQS][FREQS], int depths[], HuffNode *node, char route[], int depth)
 {
@@ -264,39 +234,43 @@ void genHuffRoutes(char huffRoutes[FREQS][FREQS], int depths[], HuffNode *node, 
     genHuffRoutes(huffRoutes, depths, node->right, rightStr, depth + 1);
 }
 
-void writeHuff(char input[], int n, FILE *fp, int freq[], HuffNode *root)
+int writeHuff(char lzData[], int n, FILE *fp, int freq[], HuffNode *root)
 {
-    printf("-- generate huffRoutes --- \n");
     // bitstrings to find the nodes in the tree
     // inner array could likely be smaller but
     // we pay the cost of 64k memory while compressing
     // to handle very skewed frequencies
     char huffRoutes[FREQS][FREQS] = {0};
-    // parallell to huffRoutes,
+    // parallel to huffRoutes,
     int depths[FREQS];
+    printf("-- huffRoutes --- \n");
     genHuffRoutes(huffRoutes, depths, root, 0, 0);
     printf("\n");
+
+    int bytesWritten = 0;
 
     // iterate LZ data blocks until end of lzData
     for (int i = 0; i < n;)
     {
-        short lzRef = shortFromBytes(input, i);
+        short lzRef = shortFromBytes(lzData, i);
         printf("lzRef: %i -- ", lzRef);
 
         // skip LZ repetition symbols
         if (lzRef < 0)
         {
-            char lzRefLength = input[i + 2];
+            char lzRefLength = lzData[i + 2];
             printf("skipping LZ ref %i length %i\n", lzRef, lzRefLength);
             fwrite(&lzRef, sizeof(lzRef), 1, fp);             // write LZ reference
             fwrite(&lzRefLength, sizeof(lzRefLength), 1, fp); // write LZ length
             // 2 byte for LZ reference + 1 for LZ length
             i += 3;
+            bytesWritten += 3;
         }
         // compress uncompressed lz data with huffman
         else if (lzRef > 0)
         {
             fwrite(&lzRef, sizeof(short), 1, fp); // positive LZ block
+            bytesWritten += 2;
             printf("encoding %i bytes\n", lzRef);
 
             unsigned char bitBuff = 0;
@@ -305,9 +279,7 @@ void writeHuff(char input[], int n, FILE *fp, int freq[], HuffNode *root)
             // iterate bytes in uncompressed section
             for (int j = 2; j < lzRef + 2; j++)
             {
-                unsigned char value = input[i + j];
-                // char huffCode[FREQS];
-                // strcpy(huffCode, (char *)huffRoutes[(int)value]);
+                unsigned char value = lzData[i + j];
                 int huffCodeLength = depths[value];
 
                 // add bits in huffCode to buffer
@@ -327,6 +299,7 @@ void writeHuff(char input[], int n, FILE *fp, int freq[], HuffNode *root)
                         fwrite(&bitBuff, sizeof(bitBuff), 1, fp);
                         bitBuff = 0;
                         bitBuffUsed = 0;
+                        bytesWritten++;
                     }
                 }
             }
@@ -337,6 +310,7 @@ void writeHuff(char input[], int n, FILE *fp, int freq[], HuffNode *root)
                 int remaining = 8 - bitBuffUsed;
                 bitBuff = bitBuff << remaining;
                 fwrite(&bitBuff, sizeof(bitBuff), 1, fp);
+                bytesWritten++;
             }
 
             i += lzRef + 2; // go to next LZ section
@@ -347,6 +321,7 @@ void writeHuff(char input[], int n, FILE *fp, int freq[], HuffNode *root)
             exit(1);
         }
     }
+    return bytesWritten;
 }
 
 void traverseHuffCode(HuffNode *node, char input[], int i, char *value, int *blockBitsRead)
@@ -357,48 +332,35 @@ void traverseHuffCode(HuffNode *node, char input[], int i, char *value, int *blo
 
     char bit = (input[i + bytesRead] >> bitsToShift) & 1;
 
-    // leaves have no children
+    // leaves have no children, it's enough to check one
     if (!node->left)
     {
         *value = node->value;
-        // printf("!!! found leaf value: %c -- ", node->value);
         return;
     }
 
-    // printByte(input[i + bytesRead]);
-    // printf("blockBitsRead: %i bytesRead: %i bitsIntoNextByte %i bitsToShift %i bit: %i\n",
-    //        *blockBitsRead, bytesRead, bitsIntoNextByte, bitsToShift, bit);
-
     (*blockBitsRead)++;
 
-    // 1 -> right
+    // 0 -> left, 1 -> right
     if (bit)
-    {
         traverseHuffCode(node->right, input, i, value, blockBitsRead);
-    }
     else
-    {
         traverseHuffCode(node->left, input, i, value, blockBitsRead);
-    }
 }
 
 void readHuff(char input[], int n, char lzData[], int freq[], HuffNode *root)
 {
     int lzDataIndex = 0;
-    int timesTravCalled = 0;
-    printf("n: %i\n", n);
 
     // iterate huffman compressed LZ data
     int i = 0;
     while (i < n)
     {
         short lzRef = shortFromBytes(input, i);
-        printf("\nreadHuff outer for i: %i lzRef: %i\n", i, lzRef);
 
         if (lzRef < 0)
         {
             int lzLength = input[i + 2];
-            printf("## skipping LZ ref %i length %i\n", lzRef, lzLength);
             insertShortToBytes(lzData, lzDataIndex, lzRef);
             lzData[lzDataIndex + 2] = lzLength;
             i += 3; // 2 byte for LZ reference + 1 for LZ length
@@ -406,7 +368,6 @@ void readHuff(char input[], int n, char lzData[], int freq[], HuffNode *root)
         }
         else if (lzRef > 0)
         {
-            printf("lzRef > 0 --- %i\n", lzRef);
             i += 2; // lzref size
             insertShortToBytes(lzData, lzDataIndex, lzRef);
             lzDataIndex += 2;
@@ -416,28 +377,24 @@ void readHuff(char input[], int n, char lzData[], int freq[], HuffNode *root)
             for (int j = 0; j < lzRef; j++)
             {
                 char value = 0;
-                timesTravCalled++;
 
                 // traverse tree with input bits until value is found
                 traverseHuffCode(root, input, i, &value, &blockBitsRead);
 
                 lzData[lzDataIndex++] = value;
-                // printf("VALUE: %hhi %c\n", value, value);
             }
 
             // need to know how far ahead to skip
             // remaining bits of last byte in block are zeroed
             int bytesRead = (blockBitsRead + 7) / 8; // int rounds down
             i += bytesRead;                          // go to next LZ block
-            printf("bytesRead: %i i: %i\n", bytesRead, i);
         }
         else
         {
-            printf("ERROR: neither LZ uncompressed section nor reference\n");
+            printf("ERROR: LZ reference was 0\n");
             exit(1);
         }
     }
-    printf("traverseHuffCode calls from root: %i\n", timesTravCalled);
 }
 
 void genLZ(char fileData[], int n, char lzData[], int lzDataLength, int *lzDataUsed)
@@ -445,7 +402,6 @@ void genLZ(char fileData[], int n, char lzData[], int lzDataLength, int *lzDataU
     int i = 0;
     while (i < n)
     {
-
         //
         i += n;
     }
@@ -454,6 +410,8 @@ void genLZ(char fileData[], int n, char lzData[], int lzDataLength, int *lzDataU
     *lzDataUsed += n + 2;
 }
 
+// compresses input file with LZ
+// then uncompressed LZ blocks with Huffman
 void compress(char infile[], char outfile[])
 {
     printf("### compressing %s to %s ###\n", infile, outfile);
@@ -465,12 +423,9 @@ void compress(char infile[], char outfile[])
         exit(1);
     }
 
-    // read raw data from file
     fseek(fpIn, 0, SEEK_END);
     int fileLength = ftell(fpIn);
     fseek(fpIn, 0, SEEK_SET);
-
-    printf("--- compress() --- fileLength: %i\n", fileLength);
 
     char *fileData = calloc(fileLength, sizeof(char));
     fread(fileData, fileLength, 1, fpIn);
@@ -481,28 +436,15 @@ void compress(char infile[], char outfile[])
     char *lzData = calloc(fileLength + 1024, sizeof(char));
     int lzDataUsed = 0;
 
-    // generate lzdata
     genLZ(fileData, fileLength, lzData, lzDataLength, &lzDataUsed);
+    free(fileData);
 
     printf("lzData: %s\n", lzData);
     for (int i = 0; i < lzDataUsed; i++)
-    {
         printf("%hhi ", lzData[i]);
-    }
 
     int n = lzDataUsed;
-    // int n = 14;
-    // char input[14] = {0, 0, 'a', 's', 'd', 'f', 0, 0, 4, 0, 0, 'a', 'a', 'd'};
-    // char input[14] = {0, 0, 'a', 'x', 'd', 'x', 0, 0, 4, 0, 0, 'a', 'b', 'd'};
-    // char input[14] = {0, 0, '1', '2', '3', '4', 0, 0, 4, 0, 0, '1', '2', '3'};
 
-    // *((short *)&input[0]) = 4;
-    // *((short *)&input[6]) = -4;
-    // *((short *)&input[9]) = 3;
-
-    // printf("short lz ref backwards %i\n", shortFromBytes(input, 9));
-
-    // int *freq = huffFreqs(input, n);
     int *freq = huffFreqs(lzData, n);
     HuffNode *root = genHuffTree(freq);
 
@@ -517,13 +459,21 @@ void compress(char infile[], char outfile[])
     fwrite(freq, sizeof(int), FREQS, fpOut);
 
     // 2nd section: bytes of de-huffman'd data (with LZ symbols)
-    // simplifies array handling when decompressing, at the small cost of 4 bytes
+    // simplifies array handling when decompressing, at the cost of 4 bytes
     fwrite(&n, sizeof(n), 1, fpOut);
 
-    // writeHuff(input, n, fpOut, freq, root);
-    writeHuff(lzData, n, fpOut, freq, root);
+    int huffBytes = writeHuff(lzData, n, fpOut, freq, root);
+    printf("\n  ---------- summary ----------\n");
+    printf("  %-8s %8s %8s\n", "Data", "Bytes", "Size");
+    printf("  %-8s %8i\n", "File", fileLength);
+    printf("  %-8s %8i %8.2f%%\n", "LZ",
+           lzDataUsed, (float)lzDataUsed / (float)fileLength * 100);
+    printf("  %-8s %8i %8.2f%%\n", "Huff",
+           huffBytes, (float)huffBytes / (float)fileLength * 100);
 }
 
+// decompress Huffman using frequency table from infile
+// then decompress LZ references and write to outfile
 void decompress(char infile[], char outfile[])
 {
     printf("### decompressing %s to %s ###\n", infile, outfile);
@@ -543,7 +493,6 @@ void decompress(char infile[], char outfile[])
     int lzDataLength = 0;
     fread(&lzDataLength, sizeof(int), 1, fp);
 
-    // debug printing
     printf("lzDataLength: %i\n", lzDataLength);
     printf("--- FREQUENCY TABLE ---\n");
     for (int i = 0; i < FREQS; i++)
@@ -555,7 +504,6 @@ void decompress(char infile[], char outfile[])
         }
     }
     // read 3rd section: LZ and huffman encoded bytes
-    // huffman
     HuffNode *root = genHuffTree(freq);
 
     int bodyStart = ftell(fp);
@@ -570,9 +518,7 @@ void decompress(char infile[], char outfile[])
 
     printf("\n--- HUFFDATA ---\n");
     for (int i = 0; i < bodyLength; i++)
-    {
         printf("%hhi ", huffData[i]);
-    }
     printf("\n\n");
 
     // iterate huffdata, write to lzData
@@ -580,16 +526,12 @@ void decompress(char infile[], char outfile[])
 
     printf("\n--- LZDATA raw ---\n");
     for (int i = 0; i < lzDataLength; i++)
-    {
         printf("%hhi ", lzData[i]);
-    }
     printf("\n\n");
 
     printf("\n--- LZDATA char ---\n");
     for (int i = 0; i < lzDataLength; i++)
-    {
         printf("%c", lzData[i]);
-    }
     printf("\n\n");
 
     // fread(lzString, )
@@ -607,6 +549,7 @@ void decompress(char infile[], char outfile[])
     fwrite(lzData, sizeof(lzData), 1, fpOut);
 }
 
+// compress or decompress a file using LZ and Huffman together
 int main(int argc, char *argv[])
 {
     if (argc > 3)
