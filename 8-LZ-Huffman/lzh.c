@@ -554,6 +554,9 @@ void compress(char infile[], char outfile[])
     fwrite(&lzDataUsed, sizeof(int), 1, fpOut);
 
     int huffBytes = writeHuff(lzData, lzDataUsed, fpOut, root);
+
+    int compressedFileSize = huffBytes + 1024 + 8;
+
     printf("\n  ---------- summary ----------\n");
     printf("  %-8s %8s %8s\n", "Data", "Bytes", "Size");
     printf("  %-8s %8i\n", "File", fileLength);
@@ -561,6 +564,8 @@ void compress(char infile[], char outfile[])
            lzDataUsed, (float)lzDataUsed / (float)fileLength * 100);
     printf("  %-8s %8i %8.2f%%\n", "LZ+Huff",
            huffBytes, (float)huffBytes / (float)fileLength * 100);
+    printf("  %-8s %8i %8.2f%%\n", "Output",
+           compressedFileSize, (float)compressedFileSize / (float)fileLength * 100);
 }
 
 // decompress Huffman using frequency table from infile
