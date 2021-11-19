@@ -7,8 +7,12 @@
 
 #define infinity 1000000000
 
-const char MODE_FUEL = 2;
-const char MODE_CHARGER = 4;
+enum
+{
+    MODE_FUEL = 2,
+    MODE_CHARGER = 4,
+    MODE_ALT = 9
+};
 
 // --- needed ---
 // X heap priority queue - adjust max heap functions for min heap
@@ -384,7 +388,7 @@ void djikstra(Graph *graph, Route *route, bool stopEarly, char mode, int station
     float startTime = (float)clock() / CLOCKS_PER_SEC;
 
     printf("\n--- %s from: %s (%i) to: %s (%i) ---\n",
-           mode == 9 ? "ALT" : "Djikstra",
+           mode == MODE_ALT ? "ALT" : "Djikstra",
            graph->nodes[route->start].name,
            route->start,
            route->destination < 0 ? "ALL" : graph->nodes[route->destination].name,
@@ -411,7 +415,8 @@ void djikstra(Graph *graph, Route *route, bool stopEarly, char mode, int station
         node->checked = true;
         checked++;
 
-        if (mode > 1 && node->mode == mode && stationsFound < n)
+        if ((mode == MODE_FUEL || mode == MODE_CHARGER) &&
+            node->mode == mode && stationsFound < n)
         {
             stations[stationsFound++] = node->nr;
             if (stationsFound == n)
@@ -434,12 +439,9 @@ void djikstra(Graph *graph, Route *route, bool stopEarly, char mode, int station
             break;
         }
 
-        int edges = 0;
-
         // check all neighbors and update distances
         for (Edge *edge = graph->nodes[nodeNr].edgeHead; edge != NULL; edge = edge->next)
         {
-            edges++;
             Node *neighbor = edge->to;
             int newDistance = node->distance + edge->weight;
 
@@ -457,7 +459,7 @@ void djikstra(Graph *graph, Route *route, bool stopEarly, char mode, int station
     float endTime = (float)clock() / CLOCKS_PER_SEC;
     float timeElapsed = endTime - startTime;
     printf("--- %s done in %.2fs, checked:%i duplicates:%i ---\n",
-           mode == 9 ? "ALT" : "Djikstra", timeElapsed, checked, duplicateNodes);
+           mode == MODE_ALT ? "ALT" : "Djikstra", timeElapsed, checked, duplicateNodes);
 }
 
 void preProcess()
@@ -642,14 +644,17 @@ int main(int argc, char *argv[])
             testFindStations(norNode, norEdge, norPoi, MODE_CHARGER, trondheim);
     }
 
-    printf("usage: %s route|pre file\n"
-           "pre-processing: %s pre <nodes> <edges> <out> 123 213 124\n"
-           "routing: %s route <nodes> <edges> <pois> <pre>\n"
+    printf("usage: %s route|pre\n"
+           "pre-process ALT: %s pre <nodes> <edges> <out> <landmark> [landmark2..]\n"
+           "routing: %s route <nodes> <edges> <poi> <pre>\n"
            "\tafter loading:\n"
            "\tdjik|alt <from> <to> [file]\n"
-           "\tfuel|charger <node> <n> (find n closest gas stations or chargers)\n"
-           "Routes can optionally be written to CSV as <nr>,<node>,<lat>,<long>\n",
+           "\t\tfind shortest path with Djikstra or ALT\n"
+           "\tfuel|charger <node> <n> <file>\n"
+           "\t\tfind n closest gas stations or chargers\n"
+           "Routes can optionally be written as CSV of nr,node,lat,long\n",
            argv[0], argv[0], argv[0]);
+
     printf("invisible lorem ipsum spaaaaaaaaaaaam spaaaaaaaaaaaam");
     printf("\33[2K"); // VT100 clear line escape code
     printf("\roverwrites previous\n");
