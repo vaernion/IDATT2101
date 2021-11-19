@@ -3,21 +3,25 @@
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <time.h>
 
 #define infinity 1000000000
 
+const char MODE_FUEL = 2;
+const char MODE_CHARGER = 4;
+
 // --- needed ---
 // X heap priority queue - adjust max heap functions for min heap
-// djikstra - bugged? too long distance
+// X djikstra
 // ALT
 // preprocessing landmark distances - compact binary file
 //      metadata at start of file? (nr of landmarks & landmark ids)
 //      x ints per node, use zero index as node nr
 //      write preprocessed file
-//      progress indicator (update every hundred/thousand nodes?)
+//      progress indicator (update every thousand/10k nodes?)
 // X read node & edge files - fscanf fast enough?
-// write coordinates of routes as lat,long
-// time djikstra & ALT
+// X write coordinates of routes as lat,long
+// X time djikstra & ALT
 // CLI arguments for preprocessing, or hardcode and check if preprocessed file exists?
 //      load preprocessed data, then spinwait for user input to check more than one route without restarting?
 //      auto lookup node nr from provided name? allow either? djikn trondheim vs djik 1234
@@ -25,6 +29,8 @@
 typedef struct NodeStruct
 {
     int nr;
+    char mode;  // byte for space efficiency
+    char *name; // most nodes don't have a name, should not be too expensive
     int distance;
     bool checked;
     double lat;
@@ -44,6 +50,7 @@ typedef struct GraphStruct
 {
     int n;
     int k;
+    int numNames;
     Node *nodes;
 } Graph;
 
@@ -81,54 +88,54 @@ int heapRight(int i)
     return (i + 1) << 1;
 }
 
-void heapPrioUp(Heap *heap, int i, int p)
+void heapPrioUp(Heap *heap, int i, Node *nodes)
 {
     int f;
-    heap->nodes[i] += p;
-    while (i && heap->nodes[i] < heap->nodes[f = heapOver(i)])
+    while (i &&
+           nodes[heap->nodes[i]].distance <
+               nodes[heap->nodes[f = heapOver(i)]].distance)
     {
         heapSwap(&heap->nodes[i], &heap->nodes[f]);
         i = f;
     }
 }
 
-void heapInsert(Heap *heap, int x)
+void heapInsert(Heap *heap, int x, Node *nodes)
 {
     // printf("heapInsert x:%d heap->length: %i\n", x, heap->length);
     int i = heap->length;
     heap->nodes[i] = x;
-    heapPrioUp(heap, i, 0);
+    heapPrioUp(heap, i, nodes);
     heap->length++;
 }
 
-void heapFix(Heap *heap, int i)
+void heapFix(Heap *heap, int i, Node *nodes)
 {
     int m = heapLeft(i);
     if (m < heap->length)
     {
         int h = m + 1;
-        if (h < heap->length && heap->nodes[h] < heap->nodes[m])
-            m = h;
-        if (heap->nodes[m] < heap->nodes[i])
+        int hDistance = nodes[heap->nodes[h]].distance;
+        int mDistance = nodes[heap->nodes[m]].distance;
+        if (h < heap->length && hDistance < mDistance)
         {
-            heapSwap(heap->nodes + i, heap->nodes + m);
-            heapFix(heap, m);
+            m = h;
+            mDistance = nodes[heap->nodes[m]].distance;
+        }
+        int iDistance = nodes[heap->nodes[i]].distance;
+        if (mDistance < iDistance)
+        {
+            heapSwap(&heap->nodes[i], &heap->nodes[m]);
+            heapFix(heap, m, nodes);
         }
     }
 }
 
-// void heapCreate(Heap *heap)
-// {
-//     int i = heap->length / 2;
-//     while (i--)
-//         heapFix(heap, i);
-// }
-
-int heapGetMin(Heap *heap)
+int heapGetMin(Heap *heap, Node *nodes)
 {
     int min = heap->nodes[0];
     heap->nodes[0] = heap->nodes[--heap->length];
-    heapFix(heap, 0);
+    heapFix(heap, 0, nodes);
     return min;
 }
 
@@ -164,8 +171,10 @@ void resetNodes(Graph *graph, Route *route, int start)
     route->path = NULL;
 }
 
-Graph *readGraph(char nodeFile[], char edgeFile[], bool reverseGraph)
+Graph *readGraph(char nodeFile[], char edgeFile[], char poiFile[], bool reverseGraph)
 {
+    float startTime = (float)clock() / CLOCKS_PER_SEC;
+
     FILE *fpNodes = fopen(nodeFile, "r");
     if (fpNodes == NULL)
     {
@@ -180,11 +189,19 @@ Graph *readGraph(char nodeFile[], char edgeFile[], bool reverseGraph)
         exit(1);
     }
 
+    FILE *fpPOI = fopen(poiFile, "r");
+    if (fpPOI == NULL)
+    {
+        perror("Error while opening file");
+        exit(1);
+    }
+
     Graph *graph = malloc(sizeof(Graph));
 
     fscanf(fpNodes, "%i\n", &graph->n);
     fscanf(fpEdges, "%i\n", &graph->k);
-    printf("n: %i k: %i\n", graph->n, graph->k);
+    fscanf(fpPOI, "%i\n", &graph->numNames);
+    printf("n: %i k: %i names: %i\n", graph->n, graph->k, graph->numNames);
 
     graph->nodes = calloc(graph->n, sizeof(Node));
 
@@ -212,7 +229,7 @@ Graph *readGraph(char nodeFile[], char edgeFile[], bool reverseGraph)
         fscanf(fpEdges, "%i %i %i %i %i\n",
                &from, &to, &carTime, &length, &speedLimit);
 
-        int weight = carTime; // can chance to length
+        int weight = carTime; // can change to length to get meters
 
         if (reverseGraph)
             edgeListInsert(graph->nodes, to, from, weight);
@@ -220,8 +237,46 @@ Graph *readGraph(char nodeFile[], char edgeFile[], bool reverseGraph)
             edgeListInsert(graph->nodes, from, to, weight);
     }
 
+    // read names and fuel/charger (mode)
+    for (int i = 0; i < graph->numNames; i++)
+    {
+        int nr;
+        int mode;
+        char name[255] = {0};
+        fscanf(fpPOI, "%i %i ", &nr, &mode);
+
+        // workaround to handle quoted node names
+        char c;
+        int namePos = 0;
+        while ((c = fgetc(fpPOI)) != EOF)
+        {
+            if (c == '\n')
+                break;
+
+            if (c != '"')
+            {
+                name[namePos] = c;
+                namePos++;
+            }
+        }
+        int nameLength = strlen(name);
+
+        // printf("name:%s nameLength: %i sizeof: %i\n",
+        //        name, nameLength, sizeof(name));
+
+        Node *node = &graph->nodes[nr];
+        node->mode = (char)mode;
+        node->name = calloc(nameLength + 1, sizeof(char));
+        strncpy(node->name, name, nameLength);
+    }
+
+    float endTime = (float)clock() / CLOCKS_PER_SEC;
+    float timeElapsed = endTime - startTime;
+    printf("loaded graph in %.2fs\n", timeElapsed);
+
     fclose(fpNodes);
     fclose(fpEdges);
+    fclose(fpPOI);
     return graph;
 }
 
@@ -230,6 +285,7 @@ Route *initRoute(int start, int destination)
     Route *route = calloc(1, sizeof(Route));
     route->start = start;
     route->destination = destination;
+
     return route;
 }
 
@@ -240,48 +296,14 @@ Heap *initHeap(int n)
     return heap;
 }
 
-void printHeap(Heap *heap, int n)
-{
-    for (int i = 0; i < n; i++)
-    {
-        printf("%i ", heap->nodes[i]);
-    }
-    printf("\n");
-}
-
-void testHeap()
-{
-    int n = 7;
-    int abc[] = {8, 52, 2, 3, 1, 8, 77};
-    Heap *heap = initHeap(n);
-
-    // insert test data
-    for (int i = 0; i < n; i++)
-    {
-        // print heap contents on one line
-        printf("HEAP INSERT:%i\n", abc[i]);
-        printHeap(heap, n);
-
-        heapInsert(heap, abc[i]);
-        printf("%i i:%i heapLength: %i\n", abc[i], i, heap->length);
-
-        printHeap(heap, n);
-        printf("\n");
-    }
-
-    // retrieve test data in min sorted order (priority queue)
-    while (heap->length > 0)
-    {
-        printf("HEAP GETMIN\n");
-        printHeap(heap, n);
-
-        int min = heapGetMin(heap);
-        printf("%i heapLength: %i\n", min, heap->length);
-
-        printHeap(heap, n);
-        printf("\n");
-    }
-}
+// void printHeap(Heap *heap, int n)
+// {
+//     for (int i = 0; i < n; i++)
+//     {
+//         printf("%i ", heap->nodes[i]);
+//     }
+//     printf("\n");
+// }
 
 void printDrivingTime(int carTime)
 {
@@ -292,22 +314,18 @@ void printDrivingTime(int carTime)
     int m = remainingSeconds / 60;
     int minutesAsSeconds = m * 60;
     int s = remainingSeconds - minutesAsSeconds;
-
     printf("%d:%02d:%02d", h, m, s);
 }
 
 void findPath(Graph *graph, Route *route)
 {
-    printf("\n---findPath---\n");
     int pathLength = 0;
 
     for (Node *node = &graph->nodes[route->destination];
          node != NULL; node = node->previous)
     {
-        // printf("%i ", node->nr);
         pathLength++;
     }
-    printf("pathLength: %i\n", pathLength);
 
     route->numNodes = pathLength;
     route->path = calloc(route->numNodes, sizeof(Node *));
@@ -318,13 +336,6 @@ void findPath(Graph *graph, Route *route)
         route->path[i] = node;
         node = node->previous;
     }
-
-    // path in correct order
-    for (int i = 0; i < route->numNodes; i++)
-    {
-        // printf("%i ", route->path[i]->nr);
-    }
-    printf("\n");
 }
 
 void writePath(Route *route, char outFile[])
@@ -343,13 +354,16 @@ void writePath(Route *route, char outFile[])
 
     for (int i = 0; i < route->numNodes; i++)
     {
-        char pathNr[10];
-        char nodeNr[30];
-        char lat[coordLength], lon[coordLength];
+        char pathNr[10] = {0};
+        char nodeNr[30] = {0};
+        char lat[coordLength];
+        char lon[coordLength];
+        memset(lat, 0, coordLength);
+        memset(lon, 0, coordLength);
         snprintf(pathNr, 10, "%i", i + 1);
         snprintf(nodeNr, 30, "%i", route->path[i]->nr);
-        snprintf(lat, coordLength, "%.8f", route->path[i]->lat);
-        snprintf(lon, coordLength, "%.8f", route->path[i]->lon);
+        sprintf(lat, "%.7f", route->path[i]->lat);
+        sprintf(lon, "%.7f", route->path[i]->lon);
         // printf("node: %i lat: %s lon: %s\n", route->path[i]->nr, lat, lon);
 
         fwrite(pathNr, sizeof(char), strlen(pathNr), fpOut);
@@ -358,28 +372,53 @@ void writePath(Route *route, char outFile[])
         fwrite(",", sizeof(char), 1, fpOut);
         fwrite(lat, sizeof(char), strlen(lat), fpOut);
         fwrite(",", sizeof(char), 1, fpOut);
-        fwrite(lon, sizeof(char), strlen(lat), fpOut);
+        fwrite(lon, sizeof(char), strlen(lon), fpOut);
         fwrite("\n", sizeof(char), 1, fpOut);
     }
+    printf("coordinates written to %s\n", outFile);
 }
 
-void djikstra(Graph *graph, Route *route, bool stopEarly)
+// modes --- default: djikstra, 2: fuel 4: chargers, 9: ALT
+void djikstra(Graph *graph, Route *route, bool stopEarly, char mode, int stations[], int n)
 {
-    printf("\n--- djikstra from: %i to: %i---\n", route->start, route->destination);
+    float startTime = (float)clock() / CLOCKS_PER_SEC;
+
+    printf("\n--- %s from: %s (%i) to: %s (%i) ---\n",
+           mode == 9 ? "ALT" : "Djikstra",
+           graph->nodes[route->start].name,
+           route->start,
+           route->destination < 0 ? "ALL" : graph->nodes[route->destination].name,
+           route->destination);
+
     Heap *heap = initHeap(graph->n);
-    heapInsert(heap, route->start);
+    heapInsert(heap, route->start, graph->nodes);
     int checked = 0;
+    int duplicateNodes = 0;
+    int stationsFound = 0;
 
     while (heap->length > 0)
     {
-        int nodeNr = heapGetMin(heap);
+        int nodeNr = heapGetMin(heap, graph->nodes);
         Node *node = &graph->nodes[nodeNr];
+
+        // workaround instead of re-prioritizing queue
+        if (node->checked)
+        {
+            duplicateNodes++;
+            continue;
+        }
+
         node->checked = true;
         checked++;
 
-        if (node->nr == route->start)
+        if (mode > 1 && node->mode == mode && stationsFound < n)
         {
-            printf("start\n");
+            stations[stationsFound++] = node->nr;
+            if (stationsFound == n)
+            {
+                printf("found %i %s\n", n, mode == MODE_FUEL ? "gas stations" : "chargers");
+                break;
+            }
         }
 
         // printf("nodeNr: %i node.nr: %i lat: %i lon: %i dist: %i\n",
@@ -387,10 +426,11 @@ void djikstra(Graph *graph, Route *route, bool stopEarly)
 
         if (stopEarly && node->nr == route->destination)
         {
-            printf("found target: %i dist: %i carTime (h:m:s) ",
-                   node->nr, node->distance);
+            printf("distance: %i time: ", node->distance);
             printDrivingTime(node->distance);
-            printf("\n");
+            printf(" ");
+            findPath(graph, route);
+            printf("nodes: %i\n", route->numNodes);
             break;
         }
 
@@ -400,11 +440,6 @@ void djikstra(Graph *graph, Route *route, bool stopEarly)
         for (Edge *edge = graph->nodes[nodeNr].edgeHead; edge != NULL; edge = edge->next)
         {
             edges++;
-            if (edge->to->nr == route->start)
-            {
-                printf("back at start, checked: %i, edges: %i\n", checked, edges);
-            }
-
             Node *neighbor = edge->to;
             int newDistance = node->distance + edge->weight;
 
@@ -412,56 +447,106 @@ void djikstra(Graph *graph, Route *route, bool stopEarly)
             {
                 neighbor->distance = newDistance;
                 neighbor->previous = node;
-                heapInsert(heap, edge->to->nr);
+                heapInsert(heap, edge->to->nr, graph->nodes);
             }
         }
     }
-    printf("--- djikstra done, checked %i nodes\n", checked);
+
     free(heap);
+
+    float endTime = (float)clock() / CLOCKS_PER_SEC;
+    float timeElapsed = endTime - startTime;
+    printf("--- %s done in %.2fs, checked:%i duplicates:%i ---\n",
+           mode == 9 ? "ALT" : "Djikstra", timeElapsed, checked, duplicateNodes);
 }
 
 void preProcess()
 {
 }
 
-void test(char nodeFile[], char edgeFile[], int from, int to)
+void writeStations(Graph *graph, char mode, int stations[], int n, char outFile[])
 {
-    printf("---test--- nodeFile: %s edgeFile: %s\n", nodeFile, edgeFile);
-    Graph *graph = readGraph(nodeFile, edgeFile, false);
+    FILE *fpOut = fopen(outFile, "w");
+    if (fpOut == NULL)
+    {
+        perror("Error while opening outfile");
+        exit(1);
+    }
+
+    char csvColumns[] = "mode,node,latitude,longitude\n";
+    fwrite(csvColumns, strlen(csvColumns), 1, fpOut);
+    // up to 3 chars for negative, 1 dot, 7 decimals, and 1 string termination
+    const int coordLength = 12;
+
+    char modeChar = '0';
+    if (mode == MODE_FUEL)
+    {
+        modeChar = '2';
+    }
+    else if (mode == MODE_CHARGER)
+    {
+        modeChar = '4';
+    }
+
+    for (int i = 0; i < n; i++)
+    {
+        char nodeNr[30];
+        char lat[coordLength], lon[coordLength];
+        snprintf(nodeNr, 30, "%i", graph->nodes[stations[i]].nr);
+        snprintf(lat, coordLength, "%.8f", graph->nodes[stations[i]].lat);
+        snprintf(lon, coordLength, "%.8f", graph->nodes[stations[i]].lon);
+        // printf("node: %i lat: %s lon: %s\n", route->path[i]->nr, lat, lon);
+
+        fwrite(&modeChar, sizeof(char), 1, fpOut);
+        fwrite(",", sizeof(char), 1, fpOut);
+        fwrite(nodeNr, sizeof(char), strlen(nodeNr), fpOut);
+        fwrite(",", sizeof(char), 1, fpOut);
+        fwrite(lat, sizeof(char), strlen(lat), fpOut);
+        fwrite(",", sizeof(char), 1, fpOut);
+        fwrite(lon, sizeof(char), strlen(lat), fpOut);
+        fwrite("\n", sizeof(char), 1, fpOut);
+    }
+    printf("coordinates written to %s\n", outFile);
+}
+
+void findStations(Graph *graph, Route *route, char outFile[], char mode, int n)
+{
+    int stations[n];
+    for (int i = 0; i < n; i++)
+    {
+        stations[i] = 0;
+    }
+    djikstra(graph, route, false, mode, stations, n);
+    writeStations(graph, mode, stations, n, outFile);
+}
+
+void testFindStations(char nodeFile[], char edgeFile[], char poiFile[],
+                      char mode, int from)
+{
+    printf("---testFindStations---\n nodes:%s edges:%s pois:%s\n", nodeFile, edgeFile, poiFile);
+    Graph *graph = readGraph(nodeFile, edgeFile, poiFile, false);
+    initDistances(graph, from);
+    Route *route = initRoute(from, -1);
+    char outFile[] = "stations.csv";
+
+    findStations(graph, route, outFile, mode, 10);
+    exit(0);
+}
+
+void test(char nodeFile[], char edgeFile[], char poiFile[], int from, int to)
+{
+    printf("---test---\n nodes:%s edges:%s pois:%s\n", nodeFile, edgeFile, poiFile);
+    Graph *graph = readGraph(nodeFile, edgeFile, poiFile, false);
     initDistances(graph, from);
     Route *route = initRoute(from, to);
     char outFile[] = "path.csv";
 
-    // testHeap();
-
-    // Node start = graph->nodes[from];
-    // printf("\nstart:%i nr:%i dist:%i lat:%f lon:%f\n",
-    //        from, start.nr, start.distance, start.lat, start.lon);
-
-    // printf("--- first 5 nodes ---\n");
-    // for (int i = 0; i < 5; i++)
-    // {
-    //     Node node = graph->nodes[i];
-    //     printf("node:%i dist:%i lat:%f lon:%f\n",
-    //            i, node.distance, node.lat, node.lon);
-    // }
-    // printf("--- last 5 nodes ---\n");
-    // for (int i = graph->n - 5; i < graph->n; i++)
-    // {
-    //     Node node = graph->nodes[i];
-    //     printf("node:%i dist:%i lat:%f lon:%f\n",
-    //            i, node.distance, node.lat, node.lon);
-    // }
-
-    djikstra(graph, route, true);
-    findPath(graph, route);
-    writePath(route, outFile);
-
-    if (strcmp(nodeFile, "ice/noder.txt") == 0)
+    djikstra(graph, route, true, 1, NULL, 0);
+    if (!(route->destination < 0))
     {
-        resetNodes(graph, route, from);
-        djikstra(graph, route, false);
+        writePath(route, outFile);
     }
+    exit(0);
 }
 
 void routeTerminal(char preFile[])
@@ -504,43 +589,66 @@ int main(int argc, char *argv[])
             return 0;
         }
     }
-    if (argc > 1)
+    // for testing purposes
+    else if (argc > 1)
     {
-        if (strcmp(argv[1], "tr") == 0)
-        {
-            char nodeFile[] = "ice/noder.txt";
-            char edgeFile[] = "ice/kanter.txt";
-            int reykjavik = 30979;
-            int selfoss = 107046;
-            test(nodeFile, edgeFile, reykjavik, selfoss);
-            return 0;
-        }
-        if (strcmp(argv[1], "tr2") == 0)
-        {
-            char nodeFile[] = "../../../norden/noder.txt";
-            char edgeFile[] = "../../../norden/kanter.txt";
-            int meraaker = 6579983;
-            int stjordal = 1693246;
-            test(nodeFile, edgeFile, meraaker, stjordal);
-            return 0;
-        }
-        if (strcmp(argv[1], "tp") == 0)
-        {
-            // char nodeFile[] = "ice/noder.txt";
-            // char edgeFile[] = "ice/kanter.txt";
+        char iceNode[] = "ice/noder.txt";
+        char iceEdge[] = "ice/kanter.txt";
+        char icePoi[] = "ice/interessepkt.txt";
+        char norNode[] = "norden/noder.txt";
+        char norEdge[] = "norden/kanter.txt";
+        char norPoi[] = "norden/interessepkt.txt";
 
-            return 0;
-        }
+        int reykjavik = 30979;
+        int selfoss = 107046;
+
+        int trondheim = 6861306;
+        int oslo = 2518118;
+        int stockholm = 6487468;
+        int meraaker = 6579983;
+        int stjordal = 1693246;
+        int stavanger = 3447384;
+        int tampere = 136963;
+        int kaarvaag = 6368906;
+        int gjemnes = 6789998;
+
+        if (strcmp(argv[1], "tr0") == 0)
+            test(iceNode, iceEdge, icePoi, reykjavik, reykjavik);
+        if (strcmp(argv[1], "tr1") == 0)
+            test(iceNode, iceEdge, icePoi, reykjavik, selfoss);
+        if (strcmp(argv[1], "tr2") == 0)
+            test(norNode, norEdge, norPoi, meraaker, stjordal);
+        if (strcmp(argv[1], "tr3") == 0)
+            test(norNode, norEdge, norPoi, trondheim, oslo);
+        if (strcmp(argv[1], "tr4") == 0)
+            test(norNode, norEdge, norPoi, oslo, stockholm);
+        if (strcmp(argv[1], "tr5") == 0)
+            test(norNode, norEdge, norPoi, stavanger, tampere);
+        if (strcmp(argv[1], "tr6") == 0)
+            test(norNode, norEdge, norPoi, kaarvaag, gjemnes);
+        if (strcmp(argv[1], "tr7") == 0)
+            test(norNode, norEdge, norPoi, tampere, trondheim);
+        if (strcmp(argv[1], "tpre1") == 0)
+            test(iceNode, iceEdge, icePoi, reykjavik, -1);
+        if (strcmp(argv[1], "tpre2") == 0)
+            test(norNode, norEdge, norPoi, trondheim, -1);
+        if (strcmp(argv[1], "tfuel1") == 0)
+            testFindStations(iceNode, iceEdge, icePoi, MODE_FUEL, reykjavik);
+        if (strcmp(argv[1], "tfuel2") == 0)
+            testFindStations(norNode, norEdge, norPoi, MODE_FUEL, trondheim);
+        if (strcmp(argv[1], "tcharger1") == 0)
+            testFindStations(iceNode, iceEdge, icePoi, MODE_CHARGER, reykjavik);
+        if (strcmp(argv[1], "tcharger2") == 0)
+            testFindStations(norNode, norEdge, norPoi, MODE_CHARGER, trondheim);
     }
 
     printf("usage: %s route|pre file\n"
            "pre-processing: %s pre <nodes> <edges> <out> 123 213 124\n"
-           "routing: %s route <nodes> <edges> <pre>\n"
+           "routing: %s route <nodes> <edges> <pois> <pre>\n"
            "\tafter loading:\n"
            "\tdjik|alt <from> <to> [file]\n"
-           "\tfuel|charger <node> (find 10 closest gas stations or chargers)\n"
-           "A path for the preprocessed file is required when preprocessing or looking for routes.\n"
-           "Routes can optionally be written to a file as lines of <lat>,<long>\n",
+           "\tfuel|charger <node> <n> (find n closest gas stations or chargers)\n"
+           "Routes can optionally be written to CSV as <nr>,<node>,<lat>,<long>\n",
            argv[0], argv[0], argv[0]);
     printf("invisible lorem ipsum spaaaaaaaaaaaam spaaaaaaaaaaaam");
     printf("\33[2K"); // VT100 clear line escape code
