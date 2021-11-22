@@ -9,6 +9,7 @@
 
 enum
 {
+    MODE_DJIKSTRA = 0,
     MODE_FUEL = 2,
     MODE_CHARGER = 4,
     MODE_ALT = 9
@@ -33,7 +34,7 @@ enum
 typedef struct NodeStruct
 {
     int nr;
-    char mode;  // byte for space efficiency
+    char mode;  // 1 byte for space efficiency
     char *name; // most nodes don't have a name, should not be too expensive
     int distance;
     bool checked;
@@ -63,7 +64,7 @@ typedef struct RouteStruct
     int start;
     int destination;
     int numNodes;
-    Node **path;
+    Node **path; // pointers to graph->nodes[i]
 } Route;
 
 typedef struct HeapStruct
@@ -106,7 +107,6 @@ void heapPrioUp(Heap *heap, int i, Node *nodes)
 
 void heapInsert(Heap *heap, int x, Node *nodes)
 {
-    // printf("heapInsert x:%d heap->length: %i\n", x, heap->length);
     int i = heap->length;
     heap->nodes[i] = x;
     heapPrioUp(heap, i, nodes);
@@ -152,7 +152,7 @@ void edgeListInsert(Node *nodes, int from, int to, int weight)
     nodes[from].edgeHead = edge;
 }
 
-void initDistances(Graph *graph, int start)
+void initNodeDistances(Graph *graph, int start)
 {
     for (int i = 0; i < graph->n; i++)
     {
@@ -163,7 +163,7 @@ void initDistances(Graph *graph, int start)
 
 void resetNodes(Graph *graph, Route *route, int start)
 {
-    initDistances(graph, start);
+    initNodeDistances(graph, start);
     for (int i = 0; i < graph->n; i++)
     {
         graph->nodes[i].checked = false;
@@ -300,15 +300,6 @@ Heap *initHeap(int n)
     return heap;
 }
 
-// void printHeap(Heap *heap, int n)
-// {
-//     for (int i = 0; i < n; i++)
-//     {
-//         printf("%i ", heap->nodes[i]);
-//     }
-//     printf("\n");
-// }
-
 void printDrivingTime(int carTime)
 {
     const int secondsInHour = 3600;
@@ -366,8 +357,8 @@ void writePath(Route *route, char outFile[])
         memset(lon, 0, coordLength);
         snprintf(pathNr, 10, "%i", i + 1);
         snprintf(nodeNr, 30, "%i", route->path[i]->nr);
-        sprintf(lat, "%.7f", route->path[i]->lat);
-        sprintf(lon, "%.7f", route->path[i]->lon);
+        snprintf(lat, coordLength, "%.7f", route->path[i]->lat);
+        snprintf(lon, coordLength, "%.7f", route->path[i]->lon);
         // printf("node: %i lat: %s lon: %s\n", route->path[i]->nr, lat, lon);
 
         fwrite(pathNr, sizeof(char), strlen(pathNr), fpOut);
@@ -382,8 +373,13 @@ void writePath(Route *route, char outFile[])
     printf("coordinates written to %s\n", outFile);
 }
 
-// modes --- default: djikstra, 2: fuel 4: chargers, 9: ALT
-void djikstra(Graph *graph, Route *route, bool stopEarly, char mode, int stations[], int n)
+// uses Djikstra or ALT (A*, Landmarks, Triangle inequality)
+// to find the shortest path
+// to a destination, all other nodes or the closest gas stations/chargers
+// modes --- 0: djikstra, 2: fuel 4: chargers, 9: ALT
+// route->destination should be < 0 when checking all nodes (stopEarly = false)
+void djikstra(Graph *graph, Route *route,
+              bool stopEarly, char mode, int stations[], int stationsN)
 {
     float startTime = (float)clock() / CLOCKS_PER_SEC;
 
@@ -405,7 +401,8 @@ void djikstra(Graph *graph, Route *route, bool stopEarly, char mode, int station
         int nodeNr = heapGetMin(heap, graph->nodes);
         Node *node = &graph->nodes[nodeNr];
 
-        // workaround instead of re-prioritizing queue
+        // workaround instead of re-prioritizing queue for updated distances
+        // typically ~5% wasted heap insertions
         if (node->checked)
         {
             duplicateNodes++;
@@ -416,12 +413,12 @@ void djikstra(Graph *graph, Route *route, bool stopEarly, char mode, int station
         checked++;
 
         if ((mode == MODE_FUEL || mode == MODE_CHARGER) &&
-            node->mode == mode && stationsFound < n)
+            node->mode == mode && stationsFound < stationsN)
         {
             stations[stationsFound++] = node->nr;
-            if (stationsFound == n)
+            if (stationsFound == stationsN)
             {
-                printf("found %i %s\n", n, mode == MODE_FUEL ? "gas stations" : "chargers");
+                printf("found %i %s\n", stationsN, mode == MODE_FUEL ? "gas stations" : "chargers");
                 break;
             }
         }
@@ -444,6 +441,12 @@ void djikstra(Graph *graph, Route *route, bool stopEarly, char mode, int station
         {
             Node *neighbor = edge->to;
             int newDistance = node->distance + edge->weight;
+
+            // int estimate = 0;
+            if (mode == MODE_ALT)
+            {
+                // estimate = estimateALT();
+            }
 
             if (!neighbor->checked && newDistance < neighbor->distance)
             {
@@ -527,7 +530,7 @@ void testFindStations(char nodeFile[], char edgeFile[], char poiFile[],
 {
     printf("---testFindStations---\n nodes:%s edges:%s pois:%s\n", nodeFile, edgeFile, poiFile);
     Graph *graph = readGraph(nodeFile, edgeFile, poiFile, false);
-    initDistances(graph, from);
+    initNodeDistances(graph, from);
     Route *route = initRoute(from, -1);
     char outFile[] = "stations.csv";
 
@@ -539,15 +542,16 @@ void test(char nodeFile[], char edgeFile[], char poiFile[], int from, int to)
 {
     printf("---test---\n nodes:%s edges:%s pois:%s\n", nodeFile, edgeFile, poiFile);
     Graph *graph = readGraph(nodeFile, edgeFile, poiFile, false);
-    initDistances(graph, from);
+    initNodeDistances(graph, from);
     Route *route = initRoute(from, to);
     char outFile[] = "path.csv";
 
-    djikstra(graph, route, true, 1, NULL, 0);
+    djikstra(graph, route, true, MODE_DJIKSTRA, NULL, 0);
     if (!(route->destination < 0))
     {
         writePath(route, outFile);
     }
+    resetNodes(graph, route, 0);
     exit(0);
 }
 
@@ -605,10 +609,12 @@ int main(int argc, char *argv[])
         int selfoss = 107046;
 
         int trondheim = 6861306;
+        int vaernes = 6590451;
         int oslo = 2518118;
         int stockholm = 6487468;
         int meraaker = 6579983;
         int stjordal = 1693246;
+        int steinkjer = 1536705;
         int stavanger = 3447384;
         int tampere = 136963;
         int kaarvaag = 6368906;
@@ -620,6 +626,8 @@ int main(int argc, char *argv[])
             test(iceNode, iceEdge, icePoi, reykjavik, selfoss);
         if (strcmp(argv[1], "tr2") == 0)
             test(norNode, norEdge, norPoi, meraaker, stjordal);
+        if (strcmp(argv[1], "tr2b") == 0)
+            test(norNode, norEdge, norPoi, stjordal, steinkjer);
         if (strcmp(argv[1], "tr3") == 0)
             test(norNode, norEdge, norPoi, trondheim, oslo);
         if (strcmp(argv[1], "tr4") == 0)
@@ -631,17 +639,21 @@ int main(int argc, char *argv[])
         if (strcmp(argv[1], "tr7") == 0)
             test(norNode, norEdge, norPoi, tampere, trondheim);
         if (strcmp(argv[1], "tpre1") == 0)
-            test(iceNode, iceEdge, icePoi, reykjavik, -1);
+            preProcess(iceNode, iceEdge, icePoi, reykjavik, -1);
         if (strcmp(argv[1], "tpre2") == 0)
-            test(norNode, norEdge, norPoi, trondheim, -1);
+            preProcess(norNode, norEdge, norPoi, trondheim, -1);
         if (strcmp(argv[1], "tfuel1") == 0)
             testFindStations(iceNode, iceEdge, icePoi, MODE_FUEL, reykjavik);
         if (strcmp(argv[1], "tfuel2") == 0)
             testFindStations(norNode, norEdge, norPoi, MODE_FUEL, trondheim);
+        if (strcmp(argv[1], "tfuel3") == 0)
+            testFindStations(norNode, norEdge, norPoi, MODE_FUEL, vaernes);
         if (strcmp(argv[1], "tcharger1") == 0)
             testFindStations(iceNode, iceEdge, icePoi, MODE_CHARGER, reykjavik);
         if (strcmp(argv[1], "tcharger2") == 0)
             testFindStations(norNode, norEdge, norPoi, MODE_CHARGER, trondheim);
+        if (strcmp(argv[1], "tcharger3") == 0)
+            testFindStations(norNode, norEdge, norPoi, MODE_CHARGER, vaernes);
     }
 
     printf("usage: %s route|pre\n"
