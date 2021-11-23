@@ -337,9 +337,14 @@ void writePath(Route *route, char outFile[])
     fwrite(csvColumns, strlen(csvColumns), 1, fpOut);
     // up to 3 chars for negative, 1 dot, 7 decimals, and 1 string termination
     const int coordLength = 12;
+    const int outputLimit = 2000;
+    int moduloFilter = (route->numNodes / outputLimit) + 1;
 
     for (int i = 0; i < route->numNodes; i++)
     {
+        if (i % moduloFilter != 0)
+            continue;
+
         char pathNr[10] = {0};
         char nodeNr[30] = {0};
         char lat[coordLength];
@@ -350,7 +355,6 @@ void writePath(Route *route, char outFile[])
         snprintf(nodeNr, 30, "%i", route->path[i]->nr);
         snprintf(lat, coordLength, "%.7f", route->path[i]->lat);
         snprintf(lon, coordLength, "%.7f", route->path[i]->lon);
-        // printf("node: %i lat: %s lon: %s\n", route->path[i]->nr, lat, lon);
 
         fwrite(pathNr, sizeof(char), strlen(pathNr), fpOut);
         fwrite(",", sizeof(char), 1, fpOut);
@@ -373,12 +377,14 @@ int estimateALT(Graph *graph, int goal, int node)
         int distanceBehind =
             (graph->fromMarks + goal * graph->m)[i] -
             (graph->fromMarks + node * graph->m)[i];
+
         if (distanceBehind > estimate)
             estimate = distanceBehind;
 
         int distanceAfter =
             (graph->toMarks + node * graph->m)[i] -
             (graph->toMarks + goal * graph->m)[i];
+
         if (distanceAfter > estimate)
             estimate = distanceAfter;
     }
@@ -453,21 +459,16 @@ void djikstra(Graph *graph, Route *route,
         for (Edge *edge = graph->nodes[nodeNr].edgeHead; edge != NULL; edge = edge->next)
         {
             Node *neighbor = edge->to;
-            int newDist = node->startDist + edge->weight;
+            int newNeighborDist = node->startDist + edge->weight;
 
-            int estimate = 0;
-            if (mode == MODE_ALT)
-            {
-                if (neighbor->estimateToGoal == 0)
-                    neighbor->estimateToGoal = estimateALT(graph, route->destination, neighbor->nr);
-                estimate = neighbor->estimateToGoal;
-            }
+            if (mode == MODE_ALT && neighbor->estimateToGoal == 0)
+                neighbor->estimateToGoal = estimateALT(graph, route->destination, neighbor->nr);
 
             if (!neighbor->checked &&
-                newDist < neighbor->startDist)
+                newNeighborDist < neighbor->startDist)
             {
-                neighbor->weight = newDist + estimate;
-                neighbor->startDist = newDist;
+                neighbor->weight = newNeighborDist + neighbor->estimateToGoal;
+                neighbor->startDist = newNeighborDist;
                 neighbor->previous = node;
                 heapInsert(heap, neighbor->nr, graph->nodes);
             }
@@ -536,12 +537,12 @@ void preProcess(char nodeFile[], char edgeFile[], char poiFile[],
     exit(0);
 }
 
-void loadPreProcess(Graph *graph, char poiFile[])
+void loadPreProcess(Graph *graph, char preFile[])
 {
-    printf("loading preprocessed landmarks from %s\n", poiFile);
+    printf("loading preprocessed landmarks from %s\n", preFile);
     float startTime = (float)clock() / CLOCKS_PER_SEC;
 
-    FILE *fp = fopen(poiFile, "rb");
+    FILE *fp = fopen(preFile, "rb");
     if (fp == NULL)
     {
         perror("Error while opening file");
@@ -598,7 +599,6 @@ void writeStations(Graph *graph, char mode, int stations[], int n, char outFile[
         snprintf(nodeNr, 30, "%i", graph->nodes[stations[i]].nr);
         snprintf(lat, coordLength, "%.8f", graph->nodes[stations[i]].lat);
         snprintf(lon, coordLength, "%.8f", graph->nodes[stations[i]].lon);
-        // printf("node: %i lat: %s lon: %s\n", route->path[i]->nr, lat, lon);
 
         fwrite(&modeChar, sizeof(char), 1, fpOut);
         fwrite(",", sizeof(char), 1, fpOut);
@@ -623,20 +623,19 @@ void findStations(Graph *graph, Route *route, char outFile[], char mode, int n)
     writeStations(graph, mode, stations, n, outFile);
 }
 
-void testFindStations(char nodeFile[], char edgeFile[], char poiFile[],
-                      char mode, int from)
+void runFindStations(char nodeFile[], char edgeFile[], char poiFile[], char outFile[],
+                     char mode, int n, int node)
 {
-    printf("---testFindStations---\n nodes:%s edges:%s pois:%s\n", nodeFile, edgeFile, poiFile);
+    printf("\n nodes:%s edges:%s pois:%s\n", nodeFile, edgeFile, poiFile);
     Graph *graph = readGraph(nodeFile, edgeFile, poiFile, false);
-    initNodeDistances(graph, from);
-    Route *route = initRoute(from, -1);
-    char outFile[] = "stations.csv";
+    initNodeDistances(graph, node);
+    Route *route = initRoute(node, -1);
 
-    findStations(graph, route, outFile, mode, 10);
+    findStations(graph, route, outFile, mode, n);
     exit(0);
 }
 
-void writePathAlt(Graph *graph, char outFile[])
+void writeCheckedNodes(Graph *graph, char outFile[])
 {
     FILE *fpOut = fopen(outFile, "w");
     if (fpOut == NULL)
@@ -681,42 +680,22 @@ void writePathAlt(Graph *graph, char outFile[])
     printf("checked coordinates written to %s\n", outFile);
 }
 
-void testAlt(char nodeFile[], char edgeFile[], char poiFile[], char preFile[],
-             int from, int to)
+void shortestPath(char nodeFile[], char edgeFile[], char poiFile[], char preFile[], char outFile[],
+                  char mode, int from, int to)
 {
     printf("nodes:%s edges:%s pois:%s\n", nodeFile, edgeFile, poiFile);
     Graph *graph = readGraph(nodeFile, edgeFile, poiFile, false);
     initNodeDistances(graph, from);
     Route *route = initRoute(from, to);
-    char outFile[] = "path.csv";
-    char outFileChecked[] = "path-checked.csv";
 
-    loadPreProcess(graph, preFile);
+    if (preFile != NULL)
+        loadPreProcess(graph, preFile);
 
-    djikstra(graph, route, true, MODE_ALT, NULL, 0);
-    writePathAlt(graph, outFileChecked);
+    djikstra(graph, route, true, mode, NULL, 0);
     if (!(route->destination < 0))
     {
         writePath(route, outFile);
     }
-    resetNodes(graph, route, 0);
-    exit(0);
-}
-
-void test(char nodeFile[], char edgeFile[], char poiFile[], int from, int to)
-{
-    printf("nodes:%s edges:%s pois:%s\n", nodeFile, edgeFile, poiFile);
-    Graph *graph = readGraph(nodeFile, edgeFile, poiFile, false);
-    initNodeDistances(graph, from);
-    Route *route = initRoute(from, to);
-    char outFile[] = "path.csv";
-
-    djikstra(graph, route, true, MODE_DJIKSTRA, NULL, 0);
-    if (!(route->destination < 0))
-    {
-        writePath(route, outFile);
-    }
-    resetNodes(graph, route, 0);
     exit(0);
 }
 
@@ -748,17 +727,45 @@ void routeTerminal(char preFile[])
 
 int main(int argc, char *argv[])
 {
-    if (argc > 3)
+    if (argc > 3 && strcmp(argv[1], "route") == 0)
     {
-        if (strcmp(argv[1], "route") == 0)
+        routeTerminal(argv[2]);
+        return 0;
+    }
+    else if (argc > 6 && strcmp(argv[1], "pre") == 0)
+    {
+        int m = argc - 6;
+        int landmarks[m];
+        for (int i = 0; i < m; i++)
         {
-            routeTerminal(argv[2]);
-            return 0;
+            landmarks[i] = atoi(argv[6 + i]);
         }
-        if (strcmp(argv[1], "pre") == 0)
-        {
-            return 0;
-        }
+
+        preProcess(argv[2], argv[3], argv[4], argv[5], landmarks, m);
+        return 0;
+    }
+    else if (argc > 7 && strcmp(argv[1], "djik") == 0)
+    {
+        int from = atoi(argv[6]);
+        int to = atoi(argv[7]);
+        shortestPath(argv[2], argv[3], argv[4], NULL, argv[5], MODE_DJIKSTRA, from, to);
+        return 0;
+    }
+    else if (argc > 8 && strcmp(argv[1], "alt") == 0)
+    {
+        int from = atoi(argv[7]);
+        int to = atoi(argv[8]);
+        shortestPath(argv[2], argv[3], argv[4], argv[5], argv[6], MODE_ALT, from, to);
+        return 0;
+    }
+    else if (argc > 7 && (strcmp(argv[1], "fuel") == 0 || strcmp(argv[1], "charger") == 0))
+    {
+        int n = atoi(argv[6]);
+        int node = atoi(argv[7]);
+        char mode = strcmp(argv[1], "fuel") == 0 ? MODE_FUEL : MODE_CHARGER;
+
+        runFindStations(argv[2], argv[3], argv[4], argv[5], mode, n, node);
+        return 0;
     }
     // for testing purposes
     else if (argc > 1)
@@ -769,11 +776,13 @@ int main(int argc, char *argv[])
         char norNode[] = "norden/noder.txt";
         char norEdge[] = "norden/kanter.txt";
         char norPoi[] = "norden/interessepkt.txt";
+        char norPre[] = "pre-norden";
+        char pathFile[] = "path.csv";
+        char stationsFile[] = "stations.csv";
 
         int reykjavik = 30979;
         int selfoss = 107046;
 
-        char norPre[] = "pre-norden";
         int nordkapp = 2151398; // northern norway
         int kvalheim = 2435670; // western norway
         int tonder = 1156810;   // southern denmark
@@ -794,55 +803,57 @@ int main(int argc, char *argv[])
         int mehamn = 2951840;
 
         if (strcmp(argv[1], "ti1") == 0)
-            test(iceNode, iceEdge, icePoi, reykjavik, selfoss);
+            shortestPath(iceNode, iceEdge, icePoi, NULL, pathFile, MODE_DJIKSTRA, reykjavik, selfoss);
 
         if (strcmp(argv[1], "tr2a") == 0)
-            test(norNode, norEdge, norPoi, meraaker, stjordal);
+            shortestPath(norNode, norEdge, norPoi, NULL, pathFile, MODE_DJIKSTRA, meraaker, stjordal);
         if (strcmp(argv[1], "tr2b") == 0)
-            test(norNode, norEdge, norPoi, stjordal, steinkjer);
+            shortestPath(norNode, norEdge, norPoi, NULL, pathFile, MODE_DJIKSTRA, stjordal, steinkjer);
         if (strcmp(argv[1], "tr2c") == 0)
-            test(norNode, norEdge, norPoi, oslo, stockholm);
+            shortestPath(norNode, norEdge, norPoi, NULL, pathFile, MODE_DJIKSTRA, oslo, stockholm);
         if (strcmp(argv[1], "tr3a") == 0)
-            test(norNode, norEdge, norPoi, trondheim, oslo);
+            shortestPath(norNode, norEdge, norPoi, NULL, pathFile, MODE_DJIKSTRA, trondheim, oslo);
         if (strcmp(argv[1], "tr3b") == 0)
-            test(norNode, norEdge, norPoi, oslo, trondheim);
+            shortestPath(norNode, norEdge, norPoi, NULL, pathFile, MODE_DJIKSTRA, oslo, trondheim);
         if (strcmp(argv[1], "tr5a") == 0)
-            test(norNode, norEdge, norPoi, stavanger, tampere);
+            shortestPath(norNode, norEdge, norPoi, NULL, pathFile, MODE_DJIKSTRA, stavanger, tampere);
         if (strcmp(argv[1], "tr5b") == 0)
-            test(norNode, norEdge, norPoi, tampere, stavanger);
+            shortestPath(norNode, norEdge, norPoi, NULL, pathFile, MODE_DJIKSTRA, tampere, stavanger);
         if (strcmp(argv[1], "tr6") == 0)
-            test(norNode, norEdge, norPoi, kaarvaag, gjemnes);
+            shortestPath(norNode, norEdge, norPoi, NULL, pathFile, MODE_DJIKSTRA, kaarvaag, gjemnes);
         if (strcmp(argv[1], "tr7") == 0)
-            test(norNode, norEdge, norPoi, tampere, trondheim);
+            shortestPath(norNode, norEdge, norPoi, NULL, pathFile, MODE_DJIKSTRA, tampere, trondheim);
         if (strcmp(argv[1], "tr9a") == 0)
-            test(norNode, norEdge, norPoi, nordkapp, trondheim);
+            shortestPath(norNode, norEdge, norPoi, NULL, pathFile, MODE_DJIKSTRA, nordkapp, trondheim);
         if (strcmp(argv[1], "tr9b") == 0)
-            test(norNode, norEdge, norPoi, trondheim, nordkapp);
-        if (strcmp(argv[1], "tr9c") == 0)
-            test(norNode, norEdge, norPoi, vaalimaa, trondheim);
-        if (strcmp(argv[1], "tr9d") == 0)
-            test(norNode, norEdge, norPoi, trondheim, vaalimaa);
+            shortestPath(norNode, norEdge, norPoi, NULL, pathFile, MODE_DJIKSTRA, trondheim, nordkapp);
 
         if (strcmp(argv[1], "talt2a") == 0)
-            testAlt(norNode, norEdge, norPoi, norPre, meraaker, stjordal);
+            shortestPath(norNode, norEdge, norPoi, norPre, pathFile, MODE_ALT, meraaker, stjordal);
         if (strcmp(argv[1], "talt2b") == 0)
-            testAlt(norNode, norEdge, norPoi, norPre, stjordal, steinkjer);
+            shortestPath(norNode, norEdge, norPoi, norPre, pathFile, MODE_ALT, stjordal, meraaker);
+        if (strcmp(argv[1], "talt2c") == 0)
+            shortestPath(norNode, norEdge, norPoi, norPre, pathFile, MODE_ALT, stjordal, steinkjer);
         if (strcmp(argv[1], "talt3a") == 0)
-            testAlt(norNode, norEdge, norPoi, norPre, trondheim, oslo);
+            shortestPath(norNode, norEdge, norPoi, norPre, pathFile, MODE_ALT, trondheim, oslo);
         if (strcmp(argv[1], "talt3b") == 0)
-            testAlt(norNode, norEdge, norPoi, norPre, oslo, trondheim);
+            shortestPath(norNode, norEdge, norPoi, norPre, pathFile, MODE_ALT, oslo, trondheim);
         if (strcmp(argv[1], "talt4a") == 0)
-            testAlt(norNode, norEdge, norPoi, norPre, snaasa, mehamn);
+            shortestPath(norNode, norEdge, norPoi, norPre, pathFile, MODE_ALT, snaasa, mehamn);
         if (strcmp(argv[1], "talt4b") == 0)
-            testAlt(norNode, norEdge, norPoi, norPre, mehamn, snaasa);
+            shortestPath(norNode, norEdge, norPoi, norPre, pathFile, MODE_ALT, mehamn, snaasa);
         if (strcmp(argv[1], "talt5a") == 0)
-            testAlt(norNode, norEdge, norPoi, norPre, stavanger, tampere);
+            shortestPath(norNode, norEdge, norPoi, norPre, pathFile, MODE_ALT, stavanger, tampere);
         if (strcmp(argv[1], "talt5b") == 0)
-            testAlt(norNode, norEdge, norPoi, norPre, tampere, stavanger);
+            shortestPath(norNode, norEdge, norPoi, norPre, pathFile, MODE_ALT, tampere, stavanger);
         if (strcmp(argv[1], "talt6") == 0)
-            testAlt(norNode, norEdge, norPoi, norPre, kaarvaag, gjemnes);
+            shortestPath(norNode, norEdge, norPoi, norPre, pathFile, MODE_ALT, kaarvaag, gjemnes);
         if (strcmp(argv[1], "talt7") == 0)
-            testAlt(norNode, norEdge, norPoi, norPre, tampere, trondheim);
+            shortestPath(norNode, norEdge, norPoi, norPre, pathFile, MODE_ALT, tampere, trondheim);
+        if (strcmp(argv[1], "talt9a") == 0)
+            shortestPath(norNode, norEdge, norPoi, norPre, pathFile, MODE_ALT, nordkapp, trondheim);
+        if (strcmp(argv[1], "talt9b") == 0)
+            shortestPath(norNode, norEdge, norPoi, norPre, pathFile, MODE_ALT, trondheim, nordkapp);
 
         if (strcmp(argv[1], "tpre1") == 0)
         {
@@ -864,28 +875,25 @@ int main(int argc, char *argv[])
         }
 
         if (strcmp(argv[1], "tfuel1") == 0)
-            testFindStations(iceNode, iceEdge, icePoi, MODE_FUEL, reykjavik);
+            runFindStations(iceNode, iceEdge, icePoi, stationsFile, MODE_FUEL, 10, reykjavik);
         if (strcmp(argv[1], "tfuel2") == 0)
-            testFindStations(norNode, norEdge, norPoi, MODE_FUEL, trondheim);
+            runFindStations(norNode, norEdge, norPoi, stationsFile, MODE_FUEL, 10, trondheim);
         if (strcmp(argv[1], "tfuel3") == 0)
-            testFindStations(norNode, norEdge, norPoi, MODE_FUEL, vaernes);
+            runFindStations(norNode, norEdge, norPoi, stationsFile, MODE_FUEL, 10, vaernes);
         if (strcmp(argv[1], "tcharger1") == 0)
-            testFindStations(iceNode, iceEdge, icePoi, MODE_CHARGER, reykjavik);
+            runFindStations(iceNode, iceEdge, icePoi, stationsFile, MODE_CHARGER, 10, reykjavik);
         if (strcmp(argv[1], "tcharger2") == 0)
-            testFindStations(norNode, norEdge, norPoi, MODE_CHARGER, trondheim);
+            runFindStations(norNode, norEdge, norPoi, stationsFile, MODE_CHARGER, 10, trondheim);
         if (strcmp(argv[1], "tcharger3") == 0)
-            testFindStations(norNode, norEdge, norPoi, MODE_CHARGER, vaernes);
+            runFindStations(norNode, norEdge, norPoi, stationsFile, MODE_CHARGER, 10, vaernes);
     }
 
-    printf("usage: %1$s route|pre\n"
-           "pre-process ALT: %1$s pre <nodes> <edges> <out> <landmark> [landmark2..]\n"
-           "routing: %1$s route <nodes> <edges> <poi> <pre>\n"
-           "\tafter loading:\n"
-           "\tdjik|alt <from> <to> [file]\n"
-           "\t\tfind shortest path with Djikstra or ALT\n"
-           "\tfuel|charger <node> <n> <file>\n"
-           "\t\tfind n closest gas stations or chargers\n"
-           "Routes can optionally be written as CSV of nr,node,lat,long\n",
+    printf("usage:\n"
+           "Pre-process ALT: %1$s pre <nodes> <edges> <poi> <out> <landmark> [landmark2..]\n"
+           "Djikstra: %1$s djik <nodes> <edges> <poi> <out> <from> <to>\n"
+           "ALT: %1$s alt <nodes> <edges> <poi> <pre> <out> <from> <to>\n"
+           "Find stations: %1$s fuel|charger <nodes> <edges> <poi> <out> n <node>\n"
+           "Routes will be written to <out> as CSV of nr,node,lat,long\n",
            argv[0]);
 
     return 1;
