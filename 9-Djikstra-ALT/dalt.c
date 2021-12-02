@@ -68,12 +68,6 @@ void heapSwap(int *a, int *b)
     *a = *b;
     *b = temp;
 }
-void heapSwap2(Heap *heap, int a, int b)
-{
-    int temp = heap->nodes[a];
-    heap->nodes[a] = heap->nodes[b];
-    heap->nodes[b] = temp;
-}
 
 int heapOver(int i)
 {
@@ -88,7 +82,7 @@ int heapRight(int i)
     return (i + 1) << 1;
 }
 
-void heapPrioUp(Heap *heap, int i, Node *nodes)
+void heapPrioUpOrig(Heap *heap, int i, Node *nodes)
 {
     int f;
     while (i && nodes[heap->nodes[i]].weight <
@@ -96,6 +90,22 @@ void heapPrioUp(Heap *heap, int i, Node *nodes)
     {
         heapSwap(&heap->nodes[i], &heap->nodes[f]);
         i = f;
+    }
+}
+
+void heapPrioUp(Heap *heap, int i, Node *nodes)
+{
+    int f = heapOver(i);
+    int iWeight = nodes[heap->nodes[i]].weight;
+    int fWeight = nodes[heap->nodes[f]].weight;
+
+    while (i && iWeight < fWeight)
+    {
+        heapSwap(&heap->nodes[i], &heap->nodes[f]);
+        i = f;
+        f = heapOver(i);
+        iWeight = nodes[heap->nodes[i]].weight;
+        fWeight = nodes[heap->nodes[f]].weight;
     }
 }
 
@@ -125,8 +135,7 @@ void heapFixOrig(Heap *heap, int i, Node *nodes)
 
         if (mWeight < iWeight)
         {
-            // heapSwap(&heap->nodes[i], &heap->nodes[m]);
-            heapSwap2(heap, i, m);
+            heapSwap(&heap->nodes[i], &heap->nodes[m]);
             heapFixOrig(heap, m, nodes);
         }
     }
@@ -157,8 +166,7 @@ void heapFix(Heap *heap, int i, Node *nodes)
 
     if (m != i)
     {
-        // heapSwap(&heap->nodes[i], &heap->nodes[m]);
-        heapSwap2(heap, i, m);
+        heapSwap(&heap->nodes[i], &heap->nodes[m]);
         heapFix(heap, m, nodes);
     }
 }
@@ -429,8 +437,9 @@ int estimateALT(Graph *graph, int goal, int node)
             (graph->toMarks + node * graph->m)[i] -
             (graph->toMarks + goal * graph->m)[i];
 
-        if (distanceAfter > estimate && distanceAfter < infinity)
-            estimate = distanceAfter;
+        // if (distanceAfter > estimate && distanceAfter < infinity &&
+        //     (graph->toMarks + node * graph->m)[i] < infinity)
+        //     estimate = distanceAfter;
 
         // debug estimates
         if ((graph->fromMarks + goal * graph->m)[i] < 0 ||
@@ -484,8 +493,6 @@ void djikstra(Graph *graph, Route *route,
 
     int prevQueueWeight = 0;
     int queueWeightSmallerCount = 0;
-    int prevStartWeight = 0;
-    int queueStartSmallerCount = 0;
 
     while (heap->length > 0)
     {
@@ -505,15 +512,13 @@ void djikstra(Graph *graph, Route *route,
 
         if (node->weight < prevQueueWeight)
         {
-            // printf("queue weight:%i < prevQueueWeight:%i\n",
-            //        node->weight, prevQueueWeight);
+            printf("queue weight:%i < prevQueueWeight:%i heapLength:%i\n",
+                   node->weight, prevQueueWeight, heap->length);
+            printf("node: %.7f %.7f\n", node->lat, node->lon);
+            printf("prev: %.7f %.7f\n", node->previous->lat, node->previous->lon);
             queueWeightSmallerCount++;
         }
         prevQueueWeight = node->weight;
-
-        if (node->startDist < prevStartWeight)
-            queueStartSmallerCount++;
-        prevStartWeight = node->startDist;
 
         // handle gas stations/chargers
         if ((mode == MODE_FUEL || mode == MODE_CHARGER) &&
@@ -567,7 +572,6 @@ void djikstra(Graph *graph, Route *route,
     free(heap);
 
     printf("queueWeightSmallerCount: %i\n", queueWeightSmallerCount);
-    printf("queueStartSmallerCount: %i\n", queueStartSmallerCount);
 
     float endTime = (float)clock() / CLOCKS_PER_SEC;
     float timeElapsed = endTime - startTime;
@@ -960,6 +964,12 @@ int main(int argc, char *argv[])
             preProcess(norNode, norEdge, norPoi, norPre, landmarks, m);
         }
         if (strcmp(argv[1], "tpre3") == 0)
+        {
+            int landmarks[] = {nordkapp, kvalheim, vaalimaa};
+            int m = sizeof(landmarks) / sizeof(int);
+            preProcess(norNode, norEdge, norPoi, norPre, landmarks, m);
+        }
+        if (strcmp(argv[1], "tpre4") == 0)
         {
             int landmarks[] = {nordkapp, kvalheim, tonder, vaalimaa};
             int m = sizeof(landmarks) / sizeof(int);
