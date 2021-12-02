@@ -1,0 +1,14 @@
+* Sjekke at hver node som hentes fra køen, virkelig har weight som er større (eller lik) forrige node som ble hentet. Hvis ikke, heap-feil eller muligens et negativt estimat noe sted.
+    DONE, BUGGED, 45k invalid sizes with tampere-stavanger
+
+* Sjekke at alle landemerkeavstander som faktisk brukes er positive, men ikke «uendelig». Hvis et landemerke ikke kan nåes, får det uendelig avstand og estimatene blir rare.
+    DONE, BUGGED, x infinite edges only with node->landmark
+
+* Sjekke at estimateALT aldri returnerer noe negativt.
+    DONE, no errors
+
+* Sjekke at alle kantvekter er positive
+    DONE, no errors
+
+* Sjekk at landemerkeavstander blir lest korrekt inn fra fil. Selv et helt korrekt program feiler, hvis det er feil i input.
+    validate all??

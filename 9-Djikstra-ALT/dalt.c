@@ -68,6 +68,12 @@ void heapSwap(int *a, int *b)
     *a = *b;
     *b = temp;
 }
+void heapSwap2(Heap *heap, int a, int b)
+{
+    int temp = heap->nodes[a];
+    heap->nodes[a] = heap->nodes[b];
+    heap->nodes[b] = temp;
+}
 
 int heapOver(int i)
 {
@@ -85,9 +91,8 @@ int heapRight(int i)
 void heapPrioUp(Heap *heap, int i, Node *nodes)
 {
     int f;
-    while (i &&
-           nodes[heap->nodes[i]].weight <
-               nodes[heap->nodes[f = heapOver(i)]].weight)
+    while (i && nodes[heap->nodes[i]].weight <
+                    nodes[heap->nodes[f = heapOver(i)]].weight)
     {
         heapSwap(&heap->nodes[i], &heap->nodes[f]);
         i = f;
@@ -96,31 +101,65 @@ void heapPrioUp(Heap *heap, int i, Node *nodes)
 
 void heapInsert(Heap *heap, int x, Node *nodes)
 {
-    int i = heap->length;
+    int i = heap->length++;
     heap->nodes[i] = x;
     heapPrioUp(heap, i, nodes);
-    heap->length++;
 }
 
-void heapFix(Heap *heap, int i, Node *nodes)
+void heapFixOrig(Heap *heap, int i, Node *nodes)
 {
     int m = heapLeft(i);
     if (m < heap->length)
     {
         int h = m + 1;
-        int hDistance = nodes[heap->nodes[h]].weight;
-        int mDistance = nodes[heap->nodes[m]].weight;
-        if (h < heap->length && hDistance < mDistance)
+        int hWeight = nodes[heap->nodes[h]].weight;
+        int mWeight = nodes[heap->nodes[m]].weight;
+
+        if (h < heap->length && hWeight < mWeight)
         {
             m = h;
-            mDistance = nodes[heap->nodes[m]].weight;
+            mWeight = hWeight;
         }
-        int iDistance = nodes[heap->nodes[i]].weight;
-        if (mDistance < iDistance)
+
+        int iWeight = nodes[heap->nodes[i]].weight;
+
+        if (mWeight < iWeight)
         {
-            heapSwap(&heap->nodes[i], &heap->nodes[m]);
-            heapFix(heap, m, nodes);
+            // heapSwap(&heap->nodes[i], &heap->nodes[m]);
+            heapSwap2(heap, i, m);
+            heapFixOrig(heap, m, nodes);
         }
+    }
+}
+
+void heapFix(Heap *heap, int i, Node *nodes)
+{
+    int l = heapLeft(i);
+    int r = l + 1;
+    int m;
+
+    int lWeight = nodes[heap->nodes[l]].weight;
+    int iWeight = nodes[heap->nodes[i]].weight;
+
+    if (l < heap->length && lWeight < iWeight)
+        m = l;
+    else
+        m = i;
+
+    int rWeight = nodes[heap->nodes[r]].weight;
+    int mWeight = nodes[heap->nodes[m]].weight;
+
+    if (r < heap->length && rWeight < mWeight)
+    {
+        m = r;
+        mWeight = rWeight;
+    }
+
+    if (m != i)
+    {
+        // heapSwap(&heap->nodes[i], &heap->nodes[m]);
+        heapSwap2(heap, i, m);
+        heapFix(heap, m, nodes);
     }
 }
 
@@ -227,6 +266,11 @@ Graph *readGraph(char nodeFile[], char edgeFile[], char poiFile[], bool reverseG
                &from, &to, &carTime, &length, &speedLimit);
 
         int weight = carTime; // can change to length to get meters
+
+        if (weight < 0)
+        {
+            printf("negative edge %i  ", weight);
+        }
 
         if (reverseGraph)
             edgeListInsert(graph->nodes, to, from, weight);
@@ -378,15 +422,38 @@ int estimateALT(Graph *graph, int goal, int node)
             (graph->fromMarks + goal * graph->m)[i] -
             (graph->fromMarks + node * graph->m)[i];
 
-        if (distanceBehind > estimate)
+        if (distanceBehind > estimate && distanceBehind < infinity)
             estimate = distanceBehind;
 
         int distanceAfter =
             (graph->toMarks + node * graph->m)[i] -
             (graph->toMarks + goal * graph->m)[i];
 
-        if (distanceAfter > estimate)
+        if (distanceAfter > estimate && distanceAfter < infinity)
             estimate = distanceAfter;
+
+        // debug estimates
+        if ((graph->fromMarks + goal * graph->m)[i] < 0 ||
+            (graph->fromMarks + goal * graph->m)[i] >= infinity)
+        {
+            printf("invalid_estimate1 ");
+        }
+        if ((graph->fromMarks + node * graph->m)[i] < 0 ||
+            (graph->fromMarks + node * graph->m)[i] >= infinity)
+        {
+            printf("invalid_estimate2 ");
+        }
+        // if ((graph->toMarks + node * graph->m)[i] < 0 ||
+        //     (graph->toMarks + node * graph->m)[i] >= infinity)
+        // {
+        //     printf("invalid_estimate3: %i node:%i ",
+        //            (graph->toMarks + node * graph->m)[i], node);
+        // }
+        if ((graph->toMarks + goal * graph->m)[i] < 0 ||
+            (graph->toMarks + goal * graph->m)[i] >= infinity)
+        {
+            printf("invalid_estimate4 ");
+        }
     }
 
     return estimate;
@@ -415,6 +482,11 @@ void djikstra(Graph *graph, Route *route,
     int duplicateNodes = 0;
     int stationsFound = 0;
 
+    int prevQueueWeight = 0;
+    int queueWeightSmallerCount = 0;
+    int prevStartWeight = 0;
+    int queueStartSmallerCount = 0;
+
     while (heap->length > 0)
     {
         int nodeNr = heapGetMin(heap, graph->nodes);
@@ -430,6 +502,18 @@ void djikstra(Graph *graph, Route *route,
 
         node->checked = true;
         checked++;
+
+        if (node->weight < prevQueueWeight)
+        {
+            // printf("queue weight:%i < prevQueueWeight:%i\n",
+            //        node->weight, prevQueueWeight);
+            queueWeightSmallerCount++;
+        }
+        prevQueueWeight = node->weight;
+
+        if (node->startDist < prevStartWeight)
+            queueStartSmallerCount++;
+        prevStartWeight = node->startDist;
 
         // handle gas stations/chargers
         if ((mode == MODE_FUEL || mode == MODE_CHARGER) &&
@@ -462,10 +546,15 @@ void djikstra(Graph *graph, Route *route,
             int newNeighborDist = node->startDist + edge->weight;
 
             if (mode == MODE_ALT && neighbor->estimateToGoal == 0)
+            {
                 neighbor->estimateToGoal = estimateALT(graph, route->destination, neighbor->nr);
+                if (neighbor->estimateToGoal < 0)
+                    printf("estimateALT returned negative  ");
+            }
 
             if (!neighbor->checked &&
-                newNeighborDist < neighbor->startDist)
+                newNeighborDist < neighbor->startDist &&
+                newNeighborDist + neighbor->estimateToGoal < neighbor->weight)
             {
                 neighbor->weight = newNeighborDist + neighbor->estimateToGoal;
                 neighbor->startDist = newNeighborDist;
@@ -476,6 +565,9 @@ void djikstra(Graph *graph, Route *route,
     }
 
     free(heap);
+
+    printf("queueWeightSmallerCount: %i\n", queueWeightSmallerCount);
+    printf("queueStartSmallerCount: %i\n", queueStartSmallerCount);
 
     float endTime = (float)clock() / CLOCKS_PER_SEC;
     float timeElapsed = endTime - startTime;
